@@ -15,7 +15,6 @@ import {
   Check,
   Monitor,
   Cloud,
-  Cpu,
 } from "lucide-react";
 import { cn } from "@multica/ui/lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "@multica/ui/components/ui/dialog";

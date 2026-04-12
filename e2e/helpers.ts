@@ -13,13 +13,14 @@ const DEFAULT_E2E_WORKSPACE = "e2e-workspace";
 export async function loginAsDefault(page: Page) {
   const api = new TestApiClient();
   await api.login(DEFAULT_E2E_EMAIL, DEFAULT_E2E_NAME);
-  await api.ensureWorkspace("E2E Workspace", DEFAULT_E2E_WORKSPACE);
+  const workspace = await api.ensureWorkspace("E2E Workspace", DEFAULT_E2E_WORKSPACE);
 
   const token = api.getToken();
   await page.goto("/login");
-  await page.evaluate((t) => {
+  await page.evaluate(({ t, workspaceId }) => {
     localStorage.setItem("multica_token", t);
-  }, token);
+    localStorage.setItem("multica_workspace_id", workspaceId);
+  }, { t: token, workspaceId: workspace.id });
   await page.goto("/issues");
   await page.waitForURL("**/issues", { timeout: 10000 });
 }

@@ -119,6 +119,7 @@ func runDaemonStart(cmd *cobra.Command, _ []string) error {
 func runDaemonBackground(cmd *cobra.Command) error {
 	profile := resolveProfile(cmd)
 	healthPort := healthPortForProfile(profile)
+	serverURL := resolveServerURL(cmd)
 
 	// Check if daemon is already running.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -140,6 +141,9 @@ func runDaemonBackground(cmd *cobra.Command) error {
 
 	// Build child args: daemon start --foreground + forwarded flags.
 	args := buildDaemonStartArgs(cmd)
+	if serverURL != "" && flagString(cmd, "server-url") == "" {
+		args = append(args, "--server-url", serverURL)
+	}
 
 	// Ensure daemon directory exists.
 	dir := daemonDirForProfile(profile)

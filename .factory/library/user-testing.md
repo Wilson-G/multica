@@ -28,8 +28,10 @@ Testing-surface guidance for mission validators and workers.
 
 - Prefer reusing existing authenticated app state when available.
 - If browser login is required, follow the repo's existing test pattern from `e2e/helpers.ts`: create or reuse the default E2E user (`e2e@multica.ai`) and workspace (`e2e-workspace`) through the API helper path, then inject `multica_token` into localStorage before loading `/issues`.
+- The bootstrap must also set `multica_workspace_id` to the ensured workspace id before navigating to `/issues`; otherwise authenticated browser sessions can bounce back to workspace selection or fail to hydrate dashboard routes reliably in the worktree app.
 - Do not rely on Docker-only fixtures for this mission.
 - Before runtime/agent/browser validation, restart the daemon from the repo CLI so the live daemon process includes the current branch's Droid provider support.
+- For repo-CLI daemon restarts in the worktree, source `.env.worktree` (or otherwise provide `MULTICA_SERVER_URL=http://localhost:18248`) before `go run ./cmd/multica daemon start`; the background command now forwards the resolved server URL to the child process so `daemon status --output json` reflects the local worktree daemon instead of defaulting back to cloud config.
 - If the daemon is unavailable, unauthenticated, or not watching the active workspace, stop and return to the orchestrator.
 
 ### Supporting inspection tools
