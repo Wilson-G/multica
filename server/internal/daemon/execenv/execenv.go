@@ -22,7 +22,7 @@ type PrepareParams struct {
 	WorkspaceID    string           // workspace UUID — tasks are grouped under this
 	TaskID         string           // task UUID — used for directory name
 	AgentName      string           // for git branch naming only
-	Provider       string           // agent provider ("claude", "codex") — determines skill injection paths
+	Provider       string           // agent provider ("claude", "codex", "droid", etc.) — determines skill injection paths
 	Task           TaskContextForEnv // context data for writing files
 }
 
@@ -56,7 +56,7 @@ type Environment struct {
 	RootDir string
 	// WorkDir is the directory to pass as Cwd to the agent ({RootDir}/workdir/).
 	WorkDir string
-	// CodexHome is the path to the per-task CODEX_HOME directory (set only for codex provider).
+	// CodexHome is the path to the per-task provider home directory used by Codex-compatible providers.
 	CodexHome string
 
 	logger *slog.Logger // for cleanup logging
@@ -104,8 +104,9 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		return nil, fmt.Errorf("execenv: write context files: %w", err)
 	}
 
-	// For Codex, set up a per-task CODEX_HOME seeded from ~/.codex/ with skills.
-	if params.Provider == "codex" {
+	// For Codex-compatible providers, set up a per-task home seeded from the
+	// shared home with skills.
+	if params.Provider == "codex" || params.Provider == "droid" {
 		codexHome := filepath.Join(envRoot, "codex-home")
 		if err := prepareCodexHome(codexHome, logger); err != nil {
 			return nil, fmt.Errorf("execenv: prepare codex-home: %w", err)

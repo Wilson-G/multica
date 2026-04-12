@@ -599,6 +599,25 @@ func TestInjectRuntimeConfigUnknownProvider(t *testing.T) {
 	}
 }
 
+func TestInjectRuntimeConfigDroidWritesAgentsFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	if err := InjectRuntimeConfig(dir, "droid", TaskContextForEnv{
+		AgentSkills: []SkillContextForEnv{{Name: "Investigate"}},
+	}); err != nil {
+		t.Fatalf("InjectRuntimeConfig(droid) error: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(content), "Investigate") {
+		t.Fatalf("expected AGENTS.md to list droid skills, got %q", string(content))
+	}
+}
+
 func TestPrepareCodexHomeSeedsFromShared(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv.
 

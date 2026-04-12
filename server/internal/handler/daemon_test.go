@@ -59,6 +59,51 @@ func TestDaemonRegister_WithDaemonToken(t *testing.T) {
 	testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, runtimeID)
 }
 
+func TestDaemonRegister_PreservesDroidProviderAndMetadata(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/daemon/register", map[string]any{
+		"workspace_id": testWorkspaceID,
+		"daemon_id":    "test-daemon-droid",
+		"device_name":  "test-device",
+		"cli_version":  "0.2.0",
+		"runtimes": []map[string]any{
+			{"name": "test-droid-runtime", "type": "droid", "version": "1.2.3", "status": "online"},
+		},
+	})
+
+	testHandler.DaemonRegister(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("DaemonRegister droid: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	runtimes, ok := resp["runtimes"].([]any)
+	if !ok || len(runtimes) != 1 {
+		t.Fatalf("expected one runtime, got %v", resp["runtimes"])
+	}
+
+	rt, ok := runtimes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("runtime shape = %T", runtimes[0])
+	}
+	if got := rt["provider"]; got != "droid" {
+		t.Fatalf("provider = %v, want droid", got)
+	}
+	if got := rt["device_info"]; got != "test-device · 1.2.3" {
+		t.Fatalf("device_info = %v, want %q", got, "test-device · 1.2.3")
+	}
+
+	runtimeID := rt["id"].(string)
+	defer testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, runtimeID)
+}
+
 func TestDaemonRegister_WithDaemonToken_WorkspaceMismatch(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

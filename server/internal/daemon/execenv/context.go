@@ -13,6 +13,7 @@ import (
 //
 // Claude:   skills → {workDir}/.claude/skills/{name}/SKILL.md  (native discovery)
 // Codex:    skills → handled separately in Prepare via codex-home
+// Droid:    skills → handled separately in Prepare via codex-home-compatible home
 // OpenCode: skills → {workDir}/.config/opencode/skills/{name}/SKILL.md  (native discovery)
 // Default:  skills → {workDir}/.agent_context/skills/{name}/SKILL.md
 func writeContextFiles(workDir, provider string, ctx TaskContextForEnv) error {
@@ -32,8 +33,8 @@ func writeContextFiles(workDir, provider string, ctx TaskContextForEnv) error {
 		if err != nil {
 			return fmt.Errorf("resolve skills dir: %w", err)
 		}
-		// Codex skills are written to codex-home in Prepare; skip here.
-		if provider != "codex" {
+		// Codex-compatible providers write skills to their per-task home in Prepare; skip here.
+		if provider != "codex" && provider != "droid" {
 			if err := writeSkillFiles(skillsDir, ctx.AgentSkills); err != nil {
 				return fmt.Errorf("write skill files: %w", err)
 			}
@@ -51,6 +52,9 @@ func resolveSkillsDir(workDir, provider string) (string, error) {
 	case "claude":
 		// Claude Code natively discovers skills from .claude/skills/ in the workdir.
 		skillsDir = filepath.Join(workDir, ".claude", "skills")
+	case "droid":
+		// Droid skills are seeded into its per-task home in Prepare.
+		skillsDir = filepath.Join(workDir, ".agent_context", "skills")
 	case "opencode":
 		// OpenCode natively discovers skills from .config/opencode/skills/ in the workdir.
 		skillsDir = filepath.Join(workDir, ".config", "opencode", "skills")

@@ -30,7 +30,7 @@ type Config struct {
 	RuntimeName        string
 	CLIVersion         string                // multica CLI version (e.g. "0.1.13")
 	Profile            string                // profile name (empty = default)
-	Agents             map[string]AgentEntry // "claude" -> entry, "codex" -> entry, "opencode" -> entry, "openclaw" -> entry, "hermes" -> entry
+	Agents             map[string]AgentEntry // "claude" -> entry, "codex" -> entry, "droid" -> entry, "opencode" -> entry, "openclaw" -> entry, "hermes" -> entry
 	WorkspacesRoot     string                // base path for execution envs (default: ~/multica_workspaces)
 	KeepEnvAfterTask   bool                  // preserve env after task for debugging
 	HealthPort         int                   // local HTTP port for health checks (default: 19514)
@@ -85,6 +85,13 @@ func LoadConfig(overrides Overrides) (Config, error) {
 			Model: strings.TrimSpace(os.Getenv("MULTICA_CODEX_MODEL")),
 		}
 	}
+	droidPath := envOrDefault("MULTICA_DROID_PATH", "droid")
+	if _, err := exec.LookPath(droidPath); err == nil {
+		agents["droid"] = AgentEntry{
+			Path:  droidPath,
+			Model: strings.TrimSpace(os.Getenv("MULTICA_DROID_MODEL")),
+		}
+	}
 	opencodePath := envOrDefault("MULTICA_OPENCODE_PATH", "opencode")
 	if _, err := exec.LookPath(opencodePath); err == nil {
 		agents["opencode"] = AgentEntry{
@@ -107,7 +114,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		}
 	}
 	if len(agents) == 0 {
-		return Config{}, fmt.Errorf("no agent CLI found: install claude, codex, opencode, openclaw, or hermes and ensure it is on PATH")
+		return Config{}, fmt.Errorf("no agent CLI found: install claude, codex, droid, opencode, openclaw, or hermes and ensure it is on PATH")
 	}
 
 	// Host info
