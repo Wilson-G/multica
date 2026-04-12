@@ -1,0 +1,36 @@
+commands:
+  install: cd "/Users/will/dev/multica" && pnpm install
+  typecheck: cd "/Users/will/dev/multica" && pnpm exec turbo typecheck --concurrency=50%
+  lint: cd "/Users/will/dev/multica" && pnpm exec turbo lint --concurrency=50%
+  test: cd "/Users/will/dev/multica" && pnpm exec turbo test --concurrency=50% && ENV_FILE=.env.worktree make test
+  e2e: cd "/Users/will/dev/multica" && PLAYWRIGHT_BASE_URL=http://localhost:13168 pnpm exec playwright test --workers=2
+  build: cd "/Users/will/dev/multica" && pnpm exec turbo build --concurrency=50% && make build
+  check: cd "/Users/will/dev/multica" && ENV_FILE=.env.worktree make check
+
+services:
+  postgres:
+    start: bash "/Users/will/dev/multica/scripts/ensure-postgres.sh" "/Users/will/dev/multica/.env.worktree"
+    stop: echo "Reused local PostgreSQL on 5432; do not stop the shared service."
+    healthcheck: pg_isready -h localhost -p 5432 -U multica
+    port: 5432
+    depends_on: []
+
+  daemon:
+    start: multica daemon start
+    stop: multica daemon stop
+    healthcheck: multica daemon status --output json
+    depends_on: []
+
+  api:
+    start: cd "/Users/will/dev/multica" && set -a && . ".env.worktree" && set +a && cd server && go run ./cmd/server
+    stop: lsof -ti :18248 | xargs kill
+    healthcheck: curl -sf http://localhost:18248/health
+    port: 18248
+    depends_on: [postgres]
+
+  web:
+    start: cd "/Users/will/dev/multica" && set -a && . ".env.worktree" && set +a && pnpm dev:web
+    stop: lsof -ti :13168 | xargs kill
+    healthcheck: curl -sf http://localhost:13168
+    port: 13168
+    depends_on: [api]
