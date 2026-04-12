@@ -10,7 +10,6 @@ fi
 
 cd "$ROOT"
 pnpm install
-bash "$ROOT/scripts/ensure-postgres.sh" "$ENV_FILE"
 
 set -a
 . "$ENV_FILE"

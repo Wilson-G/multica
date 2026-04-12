@@ -29,6 +29,7 @@ Testing-surface guidance for mission validators and workers.
 - Prefer reusing existing authenticated app state when available.
 - If browser login is required, follow the repo's existing test pattern from `e2e/helpers.ts`: create or reuse the default E2E user (`e2e@multica.ai`) and workspace (`e2e-workspace`) through the API helper path, then inject `multica_token` into localStorage before loading `/issues`.
 - Do not rely on Docker-only fixtures for this mission.
+- Before runtime/agent/browser validation, restart the daemon from the repo CLI so the live daemon process includes the current branch's Droid provider support.
 - If the daemon is unavailable, unauthenticated, or not watching the active workspace, stop and return to the orchestrator.
 
 ### Supporting inspection tools

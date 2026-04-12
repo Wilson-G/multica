@@ -2,23 +2,23 @@ commands:
   install: cd "/Users/will/dev/multica" && pnpm install
   typecheck: cd "/Users/will/dev/multica" && pnpm exec turbo typecheck --concurrency=50%
   lint: cd "/Users/will/dev/multica" && pnpm exec turbo lint --concurrency=50%
-  test: cd "/Users/will/dev/multica" && pnpm exec turbo test --concurrency=50% && ENV_FILE=.env.worktree make test
+  test: cd "/Users/will/dev/multica" && set -a && . ".env.worktree" && set +a && pnpm exec turbo test --concurrency=50% && cd server && go run ./cmd/migrate up && go test ./...
   e2e: cd "/Users/will/dev/multica" && PLAYWRIGHT_BASE_URL=http://localhost:13168 pnpm exec playwright test --workers=2
   build: cd "/Users/will/dev/multica" && pnpm exec turbo build --concurrency=50% && make build
-  check: cd "/Users/will/dev/multica" && ENV_FILE=.env.worktree make check
+  check: cd "/Users/will/dev/multica" && set -a && . ".env.worktree" && set +a && pnpm exec turbo typecheck --concurrency=50% && pnpm exec turbo test --concurrency=50% && cd server && go run ./cmd/migrate up && go test ./... && cd "/Users/will/dev/multica" && PLAYWRIGHT_BASE_URL=http://localhost:13168 pnpm exec playwright test --workers=2
 
 services:
   postgres:
-    start: bash "/Users/will/dev/multica/scripts/ensure-postgres.sh" "/Users/will/dev/multica/.env.worktree"
+    start: python3 -c "import socket; socket.create_connection(('127.0.0.1', 5432), 2).close()"
     stop: echo "Reused local PostgreSQL on 5432; do not stop the shared service."
-    healthcheck: pg_isready -h localhost -p 5432 -U multica
+    healthcheck: python3 -c "import socket; socket.create_connection(('127.0.0.1', 5432), 2).close()"
     port: 5432
     depends_on: []
 
   daemon:
-    start: multica daemon start
-    stop: multica daemon stop
-    healthcheck: multica daemon status --output json
+    start: cd "/Users/will/dev/multica/server" && go run ./cmd/multica daemon start
+    stop: cd "/Users/will/dev/multica/server" && go run ./cmd/multica daemon stop
+    healthcheck: cd "/Users/will/dev/multica/server" && go run ./cmd/multica daemon status --output json
     depends_on: []
 
   api:

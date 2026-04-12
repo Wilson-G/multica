@@ -20,7 +20,7 @@ Environment variables, external dependencies, and setup notes for this mission.
 - `pnpm` for frontend workspace commands
 - Go toolchain for `server/` commands
 - Globally installed `multica` CLI for daemon inspection and local runtime operations
-- An authenticated local Multica daemon session for real Droid-provider validation flows
+- An authenticated local Multica daemon session for real Droid-provider validation flows; restart it from the repo CLI after provider/backend changes so it picks up this branch's code
 
 ## Validation-Specific Notes
 
