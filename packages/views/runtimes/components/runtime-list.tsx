@@ -12,6 +12,7 @@ import {
 } from "@multica/ui/components/ui/dropdown-menu";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProviderLogo } from "./provider-logo";
+import { formatProviderName } from "../provider-display";
 
 type RuntimeFilter = "mine" | "all";
 
@@ -41,6 +42,8 @@ function RuntimeListItem({
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{runtime.name}</div>
         <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+          <span className="shrink-0">{formatProviderName(runtime.provider)}</span>
+          <span aria-hidden="true">•</span>
           {ownerMember ? (
             <>
               <ActorAvatar

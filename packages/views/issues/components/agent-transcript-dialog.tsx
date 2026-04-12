@@ -24,6 +24,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { api } from "@multica/core/api";
 import type { AgentTask, Agent, AgentRuntime } from "@multica/core/types/agent";
 import { redactSecrets } from "../utils/redact";
+import { ProviderBadge, formatProviderName } from "../../runtimes/provider-display";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -305,9 +306,7 @@ export function AgentTranscriptDialog({
           <div className="flex items-center gap-2 flex-wrap text-xs">
             {/* Runtime provider */}
             {runtimeInfo?.provider && (
-              <MetadataChip icon={<Cpu className="h-3 w-3" />}>
-                {formatProvider(runtimeInfo.provider)}
-              </MetadataChip>
+              <ProviderBadge provider={runtimeInfo.provider} className="h-6" />
             )}
 
             {/* Runtime environment */}
@@ -316,7 +315,9 @@ export function AgentTranscriptDialog({
                 icon={runtimeInfo.runtime_mode === "cloud" ? <Cloud className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}
               >
                 {runtimeInfo.name}
-                <span className="text-muted-foreground/60 ml-0.5">({runtimeInfo.runtime_mode})</span>
+                <span className="text-muted-foreground/60 ml-0.5">
+                  ({runtimeInfo.runtime_mode}, {formatProviderName(runtimeInfo.provider)})
+                </span>
               </MetadataChip>
             )}
 
@@ -415,15 +416,6 @@ function MetadataChip({ icon, children }: { icon?: React.ReactNode; children: Re
       {children}
     </span>
   );
-}
-
-function formatProvider(provider: string): string {
-  const map: Record<string, string> = {
-    claude: "Claude Code",
-    "claude-code": "Claude Code",
-    codex: "Codex",
-  };
-  return map[provider.toLowerCase()] ?? provider;
 }
 
 // ─── Timeline bar (colored segments) ────────────────────────────────────────

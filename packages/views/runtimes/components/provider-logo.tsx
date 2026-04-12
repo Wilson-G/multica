@@ -73,6 +73,35 @@ function HermesLogo({ className }: { className: string }) {
   );
 }
 
+function DroidLogo({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="5" y="7" width="14" height="11" rx="3" fill="currentColor" />
+      <rect x="8" y="3" width="8" height="3" rx="1.5" fill="currentColor" />
+      <circle cx="10" cy="12.5" r="1.25" fill="white" />
+      <circle cx="14" cy="12.5" r="1.25" fill="white" />
+      <path
+        d="M10.5 15.5h3"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M7.5 9.5 5.5 8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M16.5 9.5 18.5 8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function ProviderLogo({
   provider,
   className = "h-4 w-4",
@@ -91,6 +120,8 @@ export function ProviderLogo({
       return <OpenClawLogo className={className} />;
     case "hermes":
       return <HermesLogo className={className} />;
+    case "droid":
+      return <DroidLogo className={className} />;
     default:
       return <Monitor className={className} />;
   }

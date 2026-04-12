@@ -27,6 +27,7 @@ import { ProviderLogo } from "./provider-logo";
 import { PingSection } from "./ping-section";
 import { UpdateSection } from "./update-section";
 import { UsageSection } from "./usage-section";
+import { ProviderBadge, formatProviderName } from "../provider-display";
 
 function getCliVersion(metadata: Record<string, unknown>): string | null {
   if (
@@ -88,6 +89,7 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
           <div className="min-w-0">
             <h2 className="text-sm font-semibold truncate">{runtime.name}</h2>
           </div>
+          <ProviderBadge provider={runtime.provider} className="ml-1" />
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={runtime.status} />
@@ -109,7 +111,7 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
         {/* Info grid */}
         <div className="grid grid-cols-2 gap-4">
           <InfoField label="Runtime Mode" value={runtime.runtime_mode} />
-          <InfoField label="Provider" value={runtime.provider} />
+          <InfoField label="Provider" value={formatProviderName(runtime.provider)} />
           <InfoField label="Status" value={runtime.status} />
           <InfoField
             label="Last Seen"

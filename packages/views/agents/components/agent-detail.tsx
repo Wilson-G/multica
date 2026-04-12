@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import {
-  Cloud,
-  Monitor,
   FileText,
   BookOpenText,
   ListTodo,
@@ -34,6 +32,7 @@ import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";
 import { TasksTab } from "./tabs/tasks-tab";
 import { SettingsTab } from "./tabs/settings-tab";
+import { ProviderBadge } from "../../runtimes/provider-display";
 
 function getRuntimeDevice(agent: Agent, runtimes: RuntimeDevice[]): RuntimeDevice | undefined {
   return runtimes.find((runtime) => runtime.id === agent.runtime_id);
@@ -96,13 +95,15 @@ export function AgentDetail({
                 {st.label}
               </span>
             )}
-            <span className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-              {agent.runtime_mode === "cloud" ? (
-                <Cloud className="h-3 w-3" />
-              ) : (
-                <Monitor className="h-3 w-3" />
-              )}
-              {runtimeDevice?.name ?? (agent.runtime_mode === "cloud" ? "Cloud" : "Local")}
+            {runtimeDevice ? (
+              <ProviderBadge provider={runtimeDevice.provider} />
+            ) : (
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+                Runtime unavailable
+              </span>
+            )}
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+              {runtimeDevice?.name ?? agent.runtime_id}
             </span>
           </div>
         </div>

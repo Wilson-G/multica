@@ -25,6 +25,7 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import { toast } from "sonner";
+import { formatProviderName } from "../../runtimes/provider-display";
 
 export function CreateAgentDialog({
   runtimes,
@@ -166,7 +167,9 @@ export function CreateAgentDialog({
                     )}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {selectedRuntime?.device_info ?? "Register a runtime before creating an agent"}
+                    {selectedRuntime
+                      ? `${formatProviderName(selectedRuntime.provider)} • ${selectedRuntime.device_info}`
+                      : "Register a runtime before creating an agent"}
                   </div>
                 </div>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${runtimeOpen ? "rotate-180" : ""}`} />
@@ -193,7 +196,9 @@ export function CreateAgentDialog({
                           </span>
                         )}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">{device.device_info}</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {formatProviderName(device.provider)} • {device.device_info}
+                      </div>
                     </div>
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${

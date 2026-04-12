@@ -24,6 +24,8 @@ import { toast } from "sonner";
 import { api } from "@multica/core/api";
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
 import { ActorAvatar } from "../../../common/actor-avatar";
+import { ProviderLogo } from "../../../runtimes/components/provider-logo";
+import { ProviderBadge, formatProviderName } from "../../../runtimes/provider-display";
 
 export function SettingsTab({
   agent,
@@ -191,13 +193,21 @@ export function SettingsTab({
 
       <div>
         <Label className="text-xs text-muted-foreground">Runtime</Label>
+        {selectedRuntime && (
+          <div className="mt-1.5 flex items-center gap-2">
+            <ProviderBadge provider={selectedRuntime.provider} />
+            <span className="text-xs text-muted-foreground">
+              Bound to {selectedRuntime.name}
+            </span>
+          </div>
+        )}
         <Popover open={runtimeOpen} onOpenChange={setRuntimeOpen}>
           <PopoverTrigger
             disabled={runtimes.length === 0}
             className="flex w-full items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 mt-1.5 text-left text-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
           >
-            {selectedRuntime?.runtime_mode === "cloud" ? (
-              <Cloud className="h-4 w-4 shrink-0 text-muted-foreground" />
+            {selectedRuntime ? (
+              <ProviderLogo provider={selectedRuntime.provider} className="h-4 w-4 shrink-0" />
             ) : (
               <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
@@ -213,7 +223,9 @@ export function SettingsTab({
                 )}
               </div>
               <div className="truncate text-xs text-muted-foreground">
-                {selectedRuntime?.device_info ?? "Select a runtime"}
+                {selectedRuntime
+                  ? `${formatProviderName(selectedRuntime.provider)} • ${selectedRuntime.device_info}`
+                  : "Select a runtime"}
               </div>
             </div>
             <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${runtimeOpen ? "rotate-180" : ""}`} />
@@ -230,11 +242,7 @@ export function SettingsTab({
                   device.id === selectedRuntimeId ? "bg-accent" : "hover:bg-accent/50"
                 }`}
               >
-                {device.runtime_mode === "cloud" ? (
-                  <Cloud className="h-4 w-4 shrink-0 text-muted-foreground" />
-                ) : (
-                  <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
-                )}
+                <ProviderLogo provider={device.provider} className="h-4 w-4 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium">{device.name}</span>
@@ -244,7 +252,9 @@ export function SettingsTab({
                       </span>
                     )}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">{device.device_info}</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {formatProviderName(device.provider)} • {device.device_info}
+                  </div>
                 </div>
                 <span
                   className={`h-2 w-2 shrink-0 rounded-full ${
