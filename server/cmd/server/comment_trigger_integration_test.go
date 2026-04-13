@@ -173,6 +173,23 @@ func postCommentAsAgent(t *testing.T, issueID, content, agentID string, parentID
 	return comment["id"].(string)
 }
 
+func pendingTaskTriggerCommentID(t *testing.T, issueID string) *string {
+	t.Helper()
+	var triggerID *string
+	err := testPool.QueryRow(context.Background(),
+		`SELECT trigger_comment_id::text
+		 FROM agent_task_queue
+		 WHERE issue_id = $1 AND status IN ('queued', 'dispatched')
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		issueID,
+	).Scan(&triggerID)
+	if err != nil {
+		t.Fatalf("failed to load pending task trigger comment id: %v", err)
+	}
+	return triggerID
+}
+
 // strPtr returns a pointer to a string.
 func strPtr(s string) *string { return &s }
 
@@ -454,6 +471,37 @@ func TestCommentTriggerThreadInheritedMention(t *testing.T) {
 		postComment(t, issueID, reply, strPtr(threadID))
 		if n := countPendingTasks(t, issueID); n != 1 {
 			t.Errorf("expected 1 pending task (reply mentions agent explicitly), got %d", n)
+		}
+	})
+
+	t.Run("nested reply anchors to top-level thread root", func(t *testing.T) {
+		clearTasks(t, issueID)
+		content := fmt.Sprintf("[@Agent](mention://agent/%s) please review", agentID)
+		threadID := postComment(t, issueID, content, nil)
+		replyID := postComment(t, issueID, "adding details", strPtr(threadID))
+		clearTasks(t, issueID)
+
+		postComment(t, issueID, "final follow-up", strPtr(replyID))
+
+		if n := countPendingTasks(t, issueID); n != 1 {
+			t.Fatalf("expected 1 pending task for nested reply, got %d", n)
+		}
+		triggerID := pendingTaskTriggerCommentID(t, issueID)
+		if triggerID == nil || *triggerID != threadID {
+			t.Fatalf("expected trigger_comment_id %q for nested reply, got %v", threadID, triggerID)
+		}
+	})
+
+	t.Run("nested reply inherits only the top-level root mention", func(t *testing.T) {
+		clearTasks(t, issueID)
+		threadID := postComment(t, issueID, fmt.Sprintf("[@Agent](mention://agent/%s) can you help?", agentID), nil)
+		replyID := postComment(t, issueID, fmt.Sprintf("[@Someone](mention://member/%s) fyi", testUserID), strPtr(threadID))
+		clearTasks(t, issueID)
+
+		postComment(t, issueID, "more context", strPtr(replyID))
+
+		if n := countPendingTasks(t, issueID); n != 1 {
+			t.Fatalf("expected 1 pending task inheriting top-level root mention, got %d", n)
 		}
 	})
 }

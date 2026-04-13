@@ -254,6 +254,13 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		"issue_status":        issue.Status,
 	})
 
+	threadRoot, err := h.threadRootComment(r.Context(), issue, parentComment)
+	if err != nil {
+		slog.Warn("load thread root failed", append(logger.RequestAttrs(r), "error", err, "issue_id", issueID)...)
+		writeError(w, http.StatusInternalServerError, "failed to resolve thread root")
+		return
+	}
+
 	// If the issue is assigned to an agent with on_comment trigger, enqueue a new task.
 	// Skip when the comment comes from the assigned agent itself to avoid loops.
 	// Also skip when the comment @mentions others but not the assignee agent —
@@ -262,13 +269,10 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// assignee — the user is continuing a member-to-member conversation.
 	if authorType == "member" && h.shouldEnqueueOnComment(r.Context(), issue) &&
 		!h.commentMentionsOthersButNotAssignee(comment.Content, issue) &&
-		!h.isReplyToMemberThread(parentComment, comment.Content, issue) {
-		// Resolve thread root: if the comment is a reply, agent should reply
-		// to the thread root (matching frontend behavior where all replies
-		// in a thread share the same top-level parent).
+		!h.isReplyToMemberThread(threadRoot, comment.Content, issue) {
 		replyTo := comment.ID
-		if comment.ParentID.Valid {
-			replyTo = comment.ParentID
+		if threadRoot != nil {
+			replyTo = threadRoot.ID
 		}
 		if _, err := h.TaskService.EnqueueTaskForIssue(r.Context(), issue, replyTo); err != nil {
 			slog.Warn("enqueue agent task on comment failed", "issue_id", issueID, "error", err)
@@ -277,7 +281,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger @mentioned agents: parse agent mentions and enqueue tasks for each.
 	// Pass parentComment so that replies inherit mentions from the thread root.
-	h.enqueueMentionedAgentTasks(r.Context(), issue, comment, parentComment, authorType, authorID)
+	h.enqueueMentionedAgentTasks(r.Context(), issue, comment, threadRoot, authorType, authorID)
 
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -352,6 +356,23 @@ func (h *Handler) isReplyToMemberThread(parent *db.Comment, content string, issu
 		}
 	}
 	return true // Reply to member thread without mentioning agent — suppress
+}
+
+func (h *Handler) threadRootComment(ctx context.Context, issue db.Issue, parentComment *db.Comment) (*db.Comment, error) {
+	if parentComment == nil {
+		return nil, nil
+	}
+	if !parentComment.ParentID.Valid {
+		return parentComment, nil
+	}
+	root, err := h.Queries.GetCommentInWorkspace(ctx, db.GetCommentInWorkspaceParams{
+		ID:          parentComment.ParentID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &root, nil
 }
 
 // enqueueMentionedAgentTasks parses @agent mentions from comment content and
