@@ -33,6 +33,7 @@ function buildTask(
   id: string,
   status: AgentTask["status"],
   error: string | null = null,
+  result: AgentTask["result"] = null,
 ): AgentTask {
   return {
     id,
@@ -44,7 +45,7 @@ function buildTask(
     dispatched_at: null,
     started_at: null,
     completed_at: null,
-    result: null,
+    result,
     error,
     created_at: "2026-01-01T00:00:00Z",
   };
@@ -101,5 +102,35 @@ describe("chat-state helpers", () => {
       label: "Cancelled",
     });
     expect(getChatTurnState(buildTask("task-completed", "completed"))).toBeNull();
+  });
+
+  it("prefers persisted terminal metadata for reload-stable failed and cancelled turns", () => {
+    expect(
+      getChatTurnState(
+        buildTask(
+          "task-blocked",
+          "failed",
+          null,
+          { state: "blocked", message: "waiting on repo access" },
+        ),
+      ),
+    ).toEqual({
+      tone: "failed",
+      label: "waiting on repo access",
+    });
+
+    expect(
+      getChatTurnState(
+        buildTask(
+          "task-superseded",
+          "cancelled",
+          null,
+          { reason: "superseded" },
+        ),
+      ),
+    ).toEqual({
+      tone: "cancelled",
+      label: "Superseded",
+    });
   });
 });

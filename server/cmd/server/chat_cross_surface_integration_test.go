@@ -141,6 +141,58 @@ func listChatTasks(t *testing.T, token, sessionID string) []map[string]any {
 	return tasks
 }
 
+func createIssueForCrossSurfaceTest(t *testing.T, token, title string) string {
+	t.Helper()
+	resp := authRequestWithToken(t, token, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title":  title,
+		"status": "todo",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create issue: expected 201, got %d: %s", resp.StatusCode, body)
+	}
+	var issue map[string]any
+	readJSON(t, resp, &issue)
+	return issue["id"].(string)
+}
+
+func assignIssueToAgent(t *testing.T, token, issueID, agentID string) *http.Response {
+	t.Helper()
+	return authRequestWithToken(t, token, "PUT", "/api/issues/"+issueID, map[string]any{
+		"assignee_type": "agent",
+		"assignee_id":   agentID,
+	})
+}
+
+func listIssueTasks(t *testing.T, token, issueID string) []map[string]any {
+	t.Helper()
+	resp := authRequestWithToken(t, token, "GET", "/api/issues/"+issueID+"/task-runs", nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("list issue tasks: expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	var tasks []map[string]any
+	readJSON(t, resp, &tasks)
+	return tasks
+}
+
+func createIssueComment(t *testing.T, token, issueID, content string) map[string]any {
+	t.Helper()
+	resp := authRequestWithToken(t, token, "POST", "/api/issues/"+issueID+"/comments", map[string]any{
+		"content": content,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create comment: expected 201, got %d: %s", resp.StatusCode, body)
+	}
+	var comment map[string]any
+	readJSON(t, resp, &comment)
+	return comment
+}
+
 func TestChatSessionCreationRespectsPrivateAgentVisibility(t *testing.T) {
 	privateAgentID := createAgentForChatTest(t, "private")
 	_, memberToken := createWorkspaceMemberUser(t, "member")
@@ -159,6 +211,52 @@ func TestChatSessionCreationRespectsPrivateAgentVisibility(t *testing.T) {
 	if denied["error"] != "cannot chat with private agent" {
 		t.Fatalf("expected private-agent denial, got %q", denied["error"])
 	}
+
+	sessionID := createChatSession(t, testToken, privateAgentID)
+	if sessionID == "" {
+		t.Fatal("expected owner to create private-agent chat session")
+	}
+}
+
+func TestPrivateAgentPermissionsMatchAcrossAssignmentAndChat(t *testing.T) {
+	privateAgentID := createAgentForChatTest(t, "private")
+	_, memberToken := createWorkspaceMemberUser(t, "member")
+	issueID := createIssueForCrossSurfaceTest(t, memberToken, "private agent cross-surface issue")
+
+	assignResp := assignIssueToAgent(t, memberToken, issueID, privateAgentID)
+	if assignResp.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(assignResp.Body)
+		assignResp.Body.Close()
+		t.Fatalf("expected 403 for private agent assignment, got %d: %s", assignResp.StatusCode, body)
+	}
+	var assignDenied map[string]string
+	readJSON(t, assignResp, &assignDenied)
+	if assignDenied["error"] != "cannot assign to private agent" {
+		t.Fatalf("expected private assignment denial, got %q", assignDenied["error"])
+	}
+
+	chatResp := authRequestWithToken(t, memberToken, "POST", "/api/chat/sessions", map[string]any{
+		"agent_id": privateAgentID,
+		"title":    "private agent denied chat",
+	})
+	if chatResp.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(chatResp.Body)
+		chatResp.Body.Close()
+		t.Fatalf("expected 403 for private agent chat, got %d: %s", chatResp.StatusCode, body)
+	}
+	var chatDenied map[string]string
+	readJSON(t, chatResp, &chatDenied)
+	if chatDenied["error"] != "cannot chat with private agent" {
+		t.Fatalf("expected private chat denial, got %q", chatDenied["error"])
+	}
+
+	ownerAssign := assignIssueToAgent(t, testToken, issueID, privateAgentID)
+	if ownerAssign.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(ownerAssign.Body)
+		ownerAssign.Body.Close()
+		t.Fatalf("expected owner to assign private agent, got %d: %s", ownerAssign.StatusCode, body)
+	}
+	ownerAssign.Body.Close()
 
 	sessionID := createChatSession(t, testToken, privateAgentID)
 	if sessionID == "" {
@@ -247,6 +345,71 @@ func TestArchivedChatAgentPreservesHistoryButRejectsNewWork(t *testing.T) {
 	}
 }
 
+func TestArchivedAgentStopsNewAssignmentButPreservesReadableHistory(t *testing.T) {
+	agentID := createAgentForChatTest(t, "workspace")
+	issueID := createIssueForCrossSurfaceTest(t, testToken, "archived history issue")
+
+	assignResp := assignIssueToAgent(t, testToken, issueID, agentID)
+	if assignResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(assignResp.Body)
+		assignResp.Body.Close()
+		t.Fatalf("assign issue: expected 200, got %d: %s", assignResp.StatusCode, body)
+	}
+	assignResp.Body.Close()
+
+	issueTasksBefore := listIssueTasks(t, testToken, issueID)
+	if len(issueTasksBefore) != 1 {
+		t.Fatalf("expected 1 issue task before archive, got %d", len(issueTasksBefore))
+	}
+
+	sessionID := createChatSession(t, testToken, agentID)
+	sendResp := authRequest(t, "POST", "/api/chat/sessions/"+sessionID+"/messages", map[string]any{
+		"content": "history should stay readable",
+	})
+	if sendResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(sendResp.Body)
+		sendResp.Body.Close()
+		t.Fatalf("send message: expected 201, got %d: %s", sendResp.StatusCode, body)
+	}
+	sendResp.Body.Close()
+
+	archiveResp := authRequest(t, "POST", "/api/agents/"+agentID+"/archive?workspace_id="+testWorkspaceID, nil)
+	if archiveResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(archiveResp.Body)
+		archiveResp.Body.Close()
+		t.Fatalf("archive agent: expected 200, got %d: %s", archiveResp.StatusCode, body)
+	}
+	archiveResp.Body.Close()
+
+	newIssueID := createIssueForCrossSurfaceTest(t, testToken, "archived agent blocked issue")
+	rejectedAssign := assignIssueToAgent(t, testToken, newIssueID, agentID)
+	if rejectedAssign.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(rejectedAssign.Body)
+		rejectedAssign.Body.Close()
+		t.Fatalf("expected 400 when assigning archived agent, got %d: %s", rejectedAssign.StatusCode, body)
+	}
+	var assignDenied map[string]string
+	readJSON(t, rejectedAssign, &assignDenied)
+	if assignDenied["error"] != "agent is archived" {
+		t.Fatalf("expected archived assignment denial, got %q", assignDenied["error"])
+	}
+
+	issueTasksAfter := listIssueTasks(t, testToken, issueID)
+	if len(issueTasksAfter) != len(issueTasksBefore) {
+		t.Fatalf("expected archived agent to preserve issue task history, got %d -> %d", len(issueTasksBefore), len(issueTasksAfter))
+	}
+
+	chatMessages := listChatMessages(t, testToken, sessionID)
+	if len(chatMessages) != 1 {
+		t.Fatalf("expected archived agent to preserve chat messages, got %d", len(chatMessages))
+	}
+
+	chatTasks := listChatTasks(t, testToken, sessionID)
+	if len(chatTasks) != 1 {
+		t.Fatalf("expected archived agent to preserve chat task history, got %d", len(chatTasks))
+	}
+}
+
 func TestChatFirstTurnExposesTaskBindingAndSessionTasks(t *testing.T) {
 	agentID := createAgentForChatTest(t, "workspace")
 	sessionID := createChatSession(t, testToken, agentID)
@@ -288,5 +451,81 @@ func TestChatFirstTurnExposesTaskBindingAndSessionTasks(t *testing.T) {
 	}
 	if tasks[0]["status"] != "queued" {
 		t.Fatalf("expected session task to stay queued before claim, got %#v", tasks[0]["status"])
+	}
+}
+
+func TestAssignmentMentionAndChatExposeConsistentRunProvenance(t *testing.T) {
+	agentID := createAgentForChatTest(t, "workspace")
+	runtimeID := firstRuntimeID(t)
+
+	assignedIssueID := createIssueForCrossSurfaceTest(t, testToken, "assignment provenance issue")
+	assignResp := assignIssueToAgent(t, testToken, assignedIssueID, agentID)
+	if assignResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(assignResp.Body)
+		assignResp.Body.Close()
+		t.Fatalf("assign issue: expected 200, got %d: %s", assignResp.StatusCode, body)
+	}
+	assignResp.Body.Close()
+
+	assignmentTasks := listIssueTasks(t, testToken, assignedIssueID)
+	if len(assignmentTasks) != 1 {
+		t.Fatalf("expected 1 assignment task, got %d", len(assignmentTasks))
+	}
+	assignmentTask := assignmentTasks[0]
+	if assignmentTask["agent_id"] != agentID {
+		t.Fatalf("expected assignment task agent %q, got %#v", agentID, assignmentTask["agent_id"])
+	}
+	if assignmentTask["runtime_id"] != runtimeID {
+		t.Fatalf("expected assignment task runtime %q, got %#v", runtimeID, assignmentTask["runtime_id"])
+	}
+	if _, ok := assignmentTask["trigger_comment_id"]; ok {
+		t.Fatalf("expected assignment task to have no trigger_comment_id, got %#v", assignmentTask["trigger_comment_id"])
+	}
+
+	mentionedIssueID := createIssueForCrossSurfaceTest(t, testToken, "mention provenance issue")
+	comment := createIssueComment(t, testToken, mentionedIssueID, fmt.Sprintf("[@Droid](mention://agent/%s) investigate this", agentID))
+	mentionTasks := listIssueTasks(t, testToken, mentionedIssueID)
+	if len(mentionTasks) != 1 {
+		t.Fatalf("expected 1 mention task, got %d", len(mentionTasks))
+	}
+	mentionTask := mentionTasks[0]
+	if mentionTask["agent_id"] != agentID {
+		t.Fatalf("expected mention task agent %q, got %#v", agentID, mentionTask["agent_id"])
+	}
+	if mentionTask["runtime_id"] != runtimeID {
+		t.Fatalf("expected mention task runtime %q, got %#v", runtimeID, mentionTask["runtime_id"])
+	}
+	triggerCommentID, ok := mentionTask["trigger_comment_id"].(string)
+	if !ok || triggerCommentID == "" {
+		t.Fatalf("expected mention task trigger_comment_id, got %#v", mentionTask["trigger_comment_id"])
+	}
+	if comment["id"] != triggerCommentID {
+		t.Fatalf("expected mention task trigger_comment_id %q, got %#v", comment["id"], mentionTask["trigger_comment_id"])
+	}
+
+	sessionID := createChatSession(t, testToken, agentID)
+	sendResp := authRequest(t, "POST", "/api/chat/sessions/"+sessionID+"/messages", map[string]any{
+		"content": "chat provenance turn",
+	})
+	if sendResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(sendResp.Body)
+		sendResp.Body.Close()
+		t.Fatalf("send chat message: expected 201, got %d: %s", sendResp.StatusCode, body)
+	}
+	sendResp.Body.Close()
+
+	chatTasks := listChatTasks(t, testToken, sessionID)
+	if len(chatTasks) != 1 {
+		t.Fatalf("expected 1 chat task, got %d", len(chatTasks))
+	}
+	chatTask := chatTasks[0]
+	if chatTask["agent_id"] != agentID {
+		t.Fatalf("expected chat task agent %q, got %#v", agentID, chatTask["agent_id"])
+	}
+	if chatTask["runtime_id"] != runtimeID {
+		t.Fatalf("expected chat task runtime %q, got %#v", runtimeID, chatTask["runtime_id"])
+	}
+	if chatTask["chat_session_id"] != sessionID {
+		t.Fatalf("expected chat task chat_session_id %q, got %#v", sessionID, chatTask["chat_session_id"])
 	}
 }

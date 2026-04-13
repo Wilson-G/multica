@@ -1,0 +1,57 @@
+{
+  "milestone": "provider-runtime",
+  "round": 1,
+  "status": "pass",
+  "validatedAt": "2026-04-13T05:07:13Z",
+  "assertionsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0
+  },
+  "assertions": {
+    "VAL-RUNTIME-001": {
+      "status": "passed",
+      "method": "browser",
+      "summary": "Runtimes shows Droid as a first-class provider with its own list row and detail view.",
+      "evidence": [
+        "screenshots/runtime-list.png",
+        "screenshots/runtime-detail.png"
+      ]
+    },
+    "VAL-RUNTIME-002": {
+      "status": "passed",
+      "method": "browser",
+      "summary": "Create Agent can select the Droid runtime and successfully create a Droid-backed agent.",
+      "evidence": [
+        "screenshots/runtime-picker-droid.png",
+        "screenshots/created-agent-list.png"
+      ]
+    },
+    "VAL-RUNTIME-003": {
+      "status": "passed",
+      "method": "browser",
+      "summary": "Agent detail and agent settings preserve the created Droid runtime binding after reload.",
+      "evidence": [
+        "screenshots/agent-detail-droid.png",
+        "screenshots/agent-settings-droid.png"
+      ]
+    },
+    "VAL-RUNTIME-004": {
+      "status": "passed",
+      "method": "browser+test",
+      "summary": "Transcript/history surfaces retain Droid provider attribution even when the runtime is offline or missing from the current list.",
+      "evidence": [
+        "screenshots/offline-transcript-droid.png",
+        "../../../packages/views/issues/components/provider-attribution-fallback.test.tsx"
+      ]
+    }
+  },
+  "fixtures": {
+    "workspaceId": "9cf6d3b6-8354-48ff-823c-979e3cae12da",
+    "runtimeId": "509c42c4-b0af-401f-97c1-9e2d51359a79",
+    "agentId": "ca07572d-01d0-456c-994e-750204055258",
+    "historicalIssueId": "938a29a6-d768-49f2-a6be-e0f28f0c2a0d"
+  },
+  "blockingIssues": [],
+  "summary": "Provider-runtime user testing passed. The current worktree shows live Droid runtime discovery, Droid-backed agent creation, stable agent/settings binding, and offline historical transcript attribution."
+}

@@ -23,28 +23,7 @@ type CreateChatSessionRequest struct {
 }
 
 func (h *Handler) chatAgentAllowed(ctx context.Context, r *http.Request, agentID, workspaceID string) (db.Agent, int, string, bool) {
-	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-		ID:          parseUUID(agentID),
-		WorkspaceID: parseUUID(workspaceID),
-	})
-	if err != nil {
-		return db.Agent{}, http.StatusNotFound, "agent not found", false
-	}
-	if agent.ArchivedAt.Valid {
-		return db.Agent{}, http.StatusBadRequest, "agent is archived", false
-	}
-	if agent.Visibility != "private" {
-		return agent, 0, "", true
-	}
-	userID := requestUserID(r)
-	if uuidToString(agent.OwnerID) == userID {
-		return agent, 0, "", true
-	}
-	member, err := h.getWorkspaceMember(ctx, userID, workspaceID)
-	if err != nil || !roleAllowed(member.Role, "owner", "admin") {
-		return db.Agent{}, http.StatusForbidden, "cannot chat with private agent", false
-	}
-	return agent, 0, "", true
+	return h.authorizeAgentForNewWork(ctx, r, agentID, workspaceID, "cannot chat with private agent")
 }
 
 func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
@@ -403,7 +382,10 @@ func (h *Handler) CancelTaskByUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cancelled, err := h.TaskService.CancelTask(r.Context(), parseUUID(taskID))
+	cancelled, err := h.TaskService.CancelTask(r.Context(), parseUUID(taskID), service.TaskTerminalMetadata{
+		State:  service.TaskTerminalStateCancelled,
+		Reason: service.TaskTerminalReasonUserCanceled,
+	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

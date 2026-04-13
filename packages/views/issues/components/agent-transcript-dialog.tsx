@@ -15,6 +15,7 @@ import {
   Check,
   Monitor,
   Cloud,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@multica/ui/lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "@multica/ui/components/ui/dialog";
@@ -23,6 +24,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { api } from "@multica/core/api";
 import type { AgentTask, Agent, AgentRuntime } from "@multica/core/types/agent";
 import { redactSecrets } from "../utils/redact";
+import { getTaskTerminalInfo, getTaskTerminalLabel, getTaskTerminalSummary, getTaskTerminalTone } from "../utils/task-terminal";
 import { ProviderBadge, formatProviderName } from "../../runtimes/provider-display";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -160,6 +162,33 @@ function getAgentProvider(agent: Agent | null): string | null {
     : null;
 }
 
+function getTaskOriginLabel(task: AgentTask): string | null {
+  if (task.chat_session_id) {
+    return "Chat session";
+  }
+  if (task.trigger_comment_id) {
+    return "Issue thread";
+  }
+  if (task.issue_id) {
+    return "Issue assignment";
+  }
+  return null;
+}
+
+function terminalToneClasses(tone: ReturnType<typeof getTaskTerminalTone>): string {
+  switch (tone) {
+    case "success":
+      return "bg-success/15 text-success";
+    case "warning":
+      return "bg-warning/15 text-warning";
+    case "muted":
+      return "bg-muted text-muted-foreground";
+    case "destructive":
+    default:
+      return "bg-destructive/15 text-destructive";
+  }
+}
+
 // ─── Main dialog ────────────────────────────────────────────────────────────
 
 export function AgentTranscriptDialog({
@@ -242,6 +271,11 @@ export function AgentTranscriptDialog({
 
   const toolCount = items.filter((i) => i.type === "tool_use").length;
   const visibleProvider = runtimeInfo?.provider ?? getAgentProvider(agentInfo);
+  const taskOriginLabel = getTaskOriginLabel(task);
+  const terminalInfo = getTaskTerminalInfo(task);
+  const terminalLabel = getTaskTerminalLabel(terminalInfo);
+  const terminalTone = getTaskTerminalTone(terminalInfo);
+  const terminalSummary = getTaskTerminalSummary(terminalInfo);
 
   // Status display
   const statusBadge = isLive ? (
@@ -249,19 +283,16 @@ export function AgentTranscriptDialog({
       <Loader2 className="h-3 w-3 animate-spin" />
       Running
     </span>
-  ) : task.status === "completed" ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
-      <CheckCircle2 className="h-3 w-3" />
-      Completed
-    </span>
-  ) : task.status === "failed" ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">
-      <XCircle className="h-3 w-3" />
-      Failed
-    </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground capitalize">
-      {task.status}
+    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", terminalToneClasses(terminalTone))}>
+      {terminalInfo.state === "completed" ? (
+        <CheckCircle2 className="h-3 w-3" />
+      ) : terminalInfo.state === "blocked" ? (
+        <AlertCircle className="h-3 w-3" />
+      ) : terminalInfo.state === "failed" ? (
+        <XCircle className="h-3 w-3" />
+      ) : null}
+      {terminalLabel}
     </span>
   );
 
@@ -312,6 +343,12 @@ export function AgentTranscriptDialog({
             {/* Runtime provider */}
             {visibleProvider && (
               <ProviderBadge provider={visibleProvider} className="h-6" />
+            )}
+
+            {taskOriginLabel && (
+              <MetadataChip icon={<MessageSquare className="h-3 w-3" />}>
+                {taskOriginLabel}
+              </MetadataChip>
             )}
 
             {/* Runtime environment */}
@@ -383,11 +420,20 @@ export function AgentTranscriptDialog({
           className="flex-1 overflow-y-auto min-h-0"
         >
           {items.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+            <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
               {isLive ? (
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Waiting for events...
+                </div>
+              ) : terminalSummary ? (
+                <div className="max-w-xl rounded-lg border bg-background px-4 py-3 text-left shadow-sm">
+                  <p className={cn("text-sm font-medium", terminalTone === "muted" ? "text-foreground" : terminalToneClasses(terminalTone).split(" ").pop())}>
+                    {terminalLabel}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                    {terminalSummary}
+                  </p>
                 </div>
               ) : (
                 "No execution data recorded."

@@ -1,0 +1,70 @@
+{
+  "milestone": "interaction-surfaces",
+  "round": 1,
+  "status": "pass",
+  "validatedAt": "2026-04-13T05:07:13Z",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "set -a && . \".env.worktree\" && set +a && pnpm exec turbo test --concurrency=50% && cd server && go run ./cmd/migrate up && go test ./...",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "set -a && . \".env.worktree\" && set +a && pnpm exec turbo typecheck --concurrency=50%",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "pnpm exec turbo lint --concurrency=50%",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "reviewedFeatures": [
+    "droid-issue-assignment-and-thread-trigger-parity",
+    "droid-issue-terminal-state-and-auditability",
+    "droid-chat-session-and-live-execution-parity",
+    "droid-chat-archive-and-failure-parity",
+    "droid-cross-surface-permission-and-history-consistency"
+  ],
+  "blockingIssues": [],
+  "nonBlockingObservations": [
+    {
+      "area": "lint",
+      "observation": "`packages/core/platform/auth-initializer.tsx:51` still reports an existing `react-hooks/exhaustive-deps` warning, but the validator run passed and the warning is not related to the sealed interaction-surfaces milestone."
+    },
+    {
+      "area": "validation-hygiene",
+      "observation": "The untracked `.playwright-cli/` directory remains validator residue only and is not treated as a product issue."
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "api-fixture",
+      "reference": "mission-closure-v2-1776056020372"
+    },
+    {
+      "kind": "browser-screenshots",
+      "path": ".factory/validation/interaction-surfaces/user-testing/screenshots"
+    },
+    {
+      "kind": "tests",
+      "paths": [
+        "server/cmd/server/comment_trigger_integration_test.go",
+        "server/internal/handler/chat_issue_interactions_test.go",
+        "server/cmd/server/chat_cross_surface_integration_test.go",
+        "packages/views/chat/components/chat-state.test.ts",
+        "packages/views/chat/components/chat-session-history.test.tsx",
+        "packages/views/issues/components/pickers/assignee-picker.test.ts",
+        "server/internal/service/task_terminal_test.go"
+      ]
+    }
+  ],
+  "summary": "Interaction-surfaces passed. Under the current worktree the issue, chat, and cross-surface Droid flows show correct completion/superseded/blocked history, archived and failed chat durability, and consistent private or archived-agent permission behavior across assignment, chat, API, and transcript/history."
+}

@@ -788,7 +788,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task) {
 
 	if err := d.client.StartTask(ctx, task.ID); err != nil {
 		taskLog.Error("start task failed", "error", err)
-		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("start task failed: %s", err.Error())); failErr != nil {
+		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("start task failed: %s", err.Error()), "failed", ""); failErr != nil {
 			taskLog.Error("fail task after start error", "error", failErr)
 		}
 		return
@@ -833,7 +833,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task) {
 
 	if err != nil {
 		taskLog.Error("task failed", "error", err)
-		if failErr := d.client.FailTask(ctx, task.ID, err.Error()); failErr != nil {
+		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "failed", ""); failErr != nil {
 			taskLog.Error("fail task callback failed", "error", failErr)
 		}
 		return
@@ -858,14 +858,14 @@ func (d *Daemon) handleTask(ctx context.Context, task Task) {
 
 	switch result.Status {
 	case "blocked":
-		if err := d.client.FailTask(ctx, task.ID, result.Comment); err != nil {
+		if err := d.client.FailTask(ctx, task.ID, result.Comment, "blocked", ""); err != nil {
 			taskLog.Error("report blocked task failed", "error", err)
 		}
 	default:
 		taskLog.Info("task completed", "status", result.Status)
 		if err := d.client.CompleteTask(ctx, task.ID, result.Comment, result.BranchName, result.SessionID, result.WorkDir); err != nil {
 			taskLog.Error("complete task failed, falling back to fail", "error", err)
-			if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("complete task failed: %s", err.Error())); failErr != nil {
+			if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("complete task failed: %s", err.Error()), "failed", ""); failErr != nil {
 				taskLog.Error("fail task fallback also failed", "error", failErr)
 			}
 		}

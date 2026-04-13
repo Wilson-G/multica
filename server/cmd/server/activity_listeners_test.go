@@ -308,6 +308,17 @@ func TestActivityTaskCompleted(t *testing.T) {
 	if util.UUIDToString(activities[0].ActorID) != agentID {
 		t.Fatalf("expected actor_id %s, got %s", agentID, util.UUIDToString(activities[0].ActorID))
 	}
+
+	var details map[string]string
+	if err := json.Unmarshal(activities[0].Details, &details); err != nil {
+		t.Fatalf("failed to unmarshal details: %v", err)
+	}
+	if details["terminal_state"] != "completed" {
+		t.Fatalf("expected terminal_state 'completed', got %q", details["terminal_state"])
+	}
+	if details["task_id"] != "00000000-0000-0000-0000-000000000001" {
+		t.Fatalf("expected task_id to be recorded, got %q", details["task_id"])
+	}
 }
 
 func TestActivityTaskFailed(t *testing.T) {
@@ -329,10 +340,12 @@ func TestActivityTaskFailed(t *testing.T) {
 		ActorType:   "system",
 		ActorID:     "",
 		Payload: map[string]any{
-			"task_id":  "00000000-0000-0000-0000-000000000002",
-			"agent_id": agentID,
-			"issue_id": issueID,
-			"status":   "failed",
+			"task_id":        "00000000-0000-0000-0000-000000000002",
+			"agent_id":       agentID,
+			"issue_id":       issueID,
+			"status":         "failed",
+			"terminal_state": "failed",
+			"message":        "droid crashed",
 		},
 	})
 
@@ -342,5 +355,96 @@ func TestActivityTaskFailed(t *testing.T) {
 	}
 	if activities[0].Action != "task_failed" {
 		t.Fatalf("expected action 'task_failed', got %q", activities[0].Action)
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal(activities[0].Details, &details); err != nil {
+		t.Fatalf("failed to unmarshal details: %v", err)
+	}
+	if details["message"] != "droid crashed" {
+		t.Fatalf("expected failure message to be recorded, got %q", details["message"])
+	}
+}
+
+func TestActivityTaskBlocked(t *testing.T) {
+	queries := db.New(testPool)
+	bus := events.New()
+	registerActivityListeners(bus, queries)
+
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() {
+		cleanupActivities(t, issueID)
+		cleanupTestIssue(t, issueID)
+	})
+
+	agentID := testUserID
+
+	bus.Publish(events.Event{
+		Type:        protocol.EventTaskFailed,
+		WorkspaceID: testWorkspaceID,
+		ActorType:   "system",
+		ActorID:     "",
+		Payload: map[string]any{
+			"task_id":        "00000000-0000-0000-0000-000000000003",
+			"agent_id":       agentID,
+			"issue_id":       issueID,
+			"status":         "failed",
+			"terminal_state": "blocked",
+			"message":        "waiting on repo access",
+		},
+	})
+
+	activities := listActivitiesForIssue(t, queries, issueID)
+	if len(activities) != 1 {
+		t.Fatalf("expected 1 activity, got %d", len(activities))
+	}
+	if activities[0].Action != "task_blocked" {
+		t.Fatalf("expected action 'task_blocked', got %q", activities[0].Action)
+	}
+}
+
+func TestActivityTaskCancelled(t *testing.T) {
+	queries := db.New(testPool)
+	bus := events.New()
+	registerActivityListeners(bus, queries)
+
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() {
+		cleanupActivities(t, issueID)
+		cleanupTestIssue(t, issueID)
+	})
+
+	agentID := testUserID
+
+	bus.Publish(events.Event{
+		Type:        protocol.EventTaskCancelled,
+		WorkspaceID: testWorkspaceID,
+		ActorType:   "system",
+		ActorID:     "",
+		Payload: map[string]any{
+			"task_id":                "00000000-0000-0000-0000-000000000004",
+			"agent_id":               agentID,
+			"issue_id":               issueID,
+			"status":                 "cancelled",
+			"terminal_state":         "cancelled",
+			"terminal_reason":        "superseded",
+			"superseded_by_agent_id": "00000000-0000-0000-0000-000000000005",
+		},
+	})
+
+	activities := listActivitiesForIssue(t, queries, issueID)
+	if len(activities) != 1 {
+		t.Fatalf("expected 1 activity, got %d", len(activities))
+	}
+	if activities[0].Action != "task_cancelled" {
+		t.Fatalf("expected action 'task_cancelled', got %q", activities[0].Action)
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal(activities[0].Details, &details); err != nil {
+		t.Fatalf("failed to unmarshal details: %v", err)
+	}
+	if details["terminal_reason"] != "superseded" {
+		t.Fatalf("expected terminal_reason 'superseded', got %q", details["terminal_reason"])
 	}
 }

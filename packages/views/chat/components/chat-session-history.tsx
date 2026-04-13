@@ -35,9 +35,6 @@ export function ChatSessionHistory() {
   const handleArchive = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     archiveSession.mutate(sessionId);
-    if (activeSessionId === sessionId) {
-      setActiveSession(null);
-    }
   };
 
   const activeSessions = sessions.filter((s) => s.status === "active");
@@ -141,10 +138,19 @@ function SessionItem({
   onArchive?: (e: React.MouseEvent) => void;
 }) {
   const timeAgo = formatTimeAgo(session.updated_at);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelect();
+    }
+  };
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={handleKeyDown}
       className={`group flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/50 ${
         isActive ? "bg-accent/30" : ""
       }`}
@@ -175,6 +181,7 @@ function SessionItem({
       </div>
       {onArchive && (
         <button
+          type="button"
           onClick={onArchive}
           title="Archive"
           className="invisible group-hover:visible flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive shrink-0 mt-0.5"
@@ -182,7 +189,7 @@ function SessionItem({
           <Trash2 className="size-3" />
         </button>
       )}
-    </button>
+    </div>
   );
 }
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -110,6 +111,18 @@ func listIssueComments(t *testing.T, issueID string) []CommentResponse {
 	return decodeRecorderJSON[[]CommentResponse](t, w)
 }
 
+func listIssueTimeline(t *testing.T, issueID string) []TimelineEntry {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := newRequest("GET", "/api/issues/"+issueID+"/timeline", nil)
+	req = withURLParam(req, "id", issueID)
+	testHandler.ListTimeline(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListTimeline: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	return decodeRecorderJSON[[]TimelineEntry](t, w)
+}
+
 func createHandlerChatSession(t *testing.T, agentID string) string {
 	t.Helper()
 	w := httptest.NewRecorder()
@@ -126,6 +139,20 @@ func createHandlerChatSession(t *testing.T, agentID string) string {
 		_ = testHandler.Queries.ArchiveChatSession(context.Background(), parseUUID(resp.ID))
 	})
 	return resp.ID
+}
+
+func listAllChatSessions(t *testing.T) []ChatSessionResponse {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := newRequest("GET", "/api/chat/sessions?status=all", nil)
+	q := req.URL.Query()
+	q.Set("status", "all")
+	req.URL.RawQuery = q.Encode()
+	testHandler.ListChatSessions(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListChatSessions: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	return decodeRecorderJSON[[]ChatSessionResponse](t, w)
 }
 
 func sendHandlerChatMessage(t *testing.T, sessionID, content string) *httptest.ResponseRecorder {
@@ -269,6 +296,82 @@ func TestChatArchivedSessionRejectsNewSend(t *testing.T) {
 
 	if messages := listChatMessagesForSession(t, sessionID); len(messages) != 0 {
 		t.Fatalf("expected archived session to keep message history unchanged, got %d messages", len(messages))
+	}
+}
+
+func TestChatArchivedSessionPreservesReadableHistoryAndRunningTurnAttribution(t *testing.T) {
+	agent := createHandlerAgent(t, "Archived Running Session Agent")
+	sessionID := createHandlerChatSession(t, uuidToString(agent.ID))
+
+	w := sendHandlerChatMessage(t, sessionID, "Keep running after archive")
+	if w.Code != http.StatusCreated {
+		t.Fatalf("SendChatMessage: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := decodeRecorderJSON[SendChatMessageResponse](t, w)
+
+	task := claimAndStartTaskForAgent(t, uuidToString(agent.ID))
+	if uuidToString(task.ID) != resp.TaskID {
+		t.Fatalf("expected running task %q, got %q", resp.TaskID, uuidToString(task.ID))
+	}
+
+	w = httptest.NewRecorder()
+	req := newRequest("DELETE", "/api/chat/sessions/"+sessionID, nil)
+	req = withURLParam(req, "sessionId", sessionID)
+	testHandler.ArchiveChatSession(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("ArchiveChatSession: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	sessions := listAllChatSessions(t)
+	foundArchived := false
+	for _, session := range sessions {
+		if session.ID == sessionID && session.Status == "archived" {
+			foundArchived = true
+			break
+		}
+	}
+	if !foundArchived {
+		t.Fatal("expected archived session to remain visible in history")
+	}
+
+	w = sendHandlerChatMessage(t, sessionID, "This follow-up should be rejected")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("SendChatMessage: expected 400 for archived session, got %d: %s", w.Code, w.Body.String())
+	}
+
+	messages := listChatMessagesForSession(t, sessionID)
+	if len(messages) != 1 {
+		t.Fatalf("expected archived session to keep the running user turn, got %d messages", len(messages))
+	}
+	if messages[0].Role != "user" || messages[0].TaskID == nil || *messages[0].TaskID != resp.TaskID {
+		t.Fatalf("expected running user turn to stay attached to task %q, got %#v", resp.TaskID, messages[0])
+	}
+
+	tasks := listChatTasksForSession(t, sessionID)
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 chat task after archive, got %d", len(tasks))
+	}
+	if tasks[0].Status != "running" {
+		t.Fatalf("expected archived session task to remain running, got %q", tasks[0].Status)
+	}
+
+	result, err := json.Marshal(map[string]string{"output": "Still attributed to archived session"})
+	if err != nil {
+		t.Fatalf("failed to marshal task result: %v", err)
+	}
+	if _, err := testHandler.TaskService.CompleteTask(context.Background(), task.ID, result, "archived-chat-session", "/tmp/archived-chat-session"); err != nil {
+		t.Fatalf("CompleteTask: %v", err)
+	}
+
+	messages = listChatMessagesForSession(t, sessionID)
+	if len(messages) != 2 {
+		t.Fatalf("expected archived session history to remain readable after completion, got %d messages", len(messages))
+	}
+	if messages[1].Role != "assistant" {
+		t.Fatalf("expected archived session completion to persist an assistant reply, got role %q", messages[1].Role)
+	}
+	if messages[1].TaskID == nil || *messages[1].TaskID != resp.TaskID {
+		t.Fatalf("expected archived assistant reply to keep task attribution %q, got %#v", resp.TaskID, messages[1].TaskID)
 	}
 }
 
@@ -443,12 +546,50 @@ func TestIssueTaskCompletionPostsSingleComment(t *testing.T) {
 	}
 }
 
+func TestIssueTaskCompletionDoesNotDuplicateExistingFinalComment(t *testing.T) {
+	agent := createHandlerAgent(t, "Issue Completion Dedup Agent")
+	issueID := createHandlerIssue(t, "Issue completion dedup audit test")
+	assignIssueToAgent(t, issueID, uuidToString(agent.ID))
+
+	task := claimAndStartTaskForAgent(t, uuidToString(agent.ID))
+	if _, err := testHandler.Queries.CreateComment(context.Background(), db.CreateCommentParams{
+		IssueID:     parseUUID(issueID),
+		WorkspaceID: parseUUID(testWorkspaceID),
+		AuthorType:  "agent",
+		AuthorID:    agent.ID,
+		Content:     "Finished the Droid work",
+		Type:        "comment",
+	}); err != nil {
+		t.Fatalf("CreateComment: %v", err)
+	}
+
+	result, err := json.Marshal(map[string]string{"output": "Finished the Droid work"})
+	if err != nil {
+		t.Fatalf("failed to marshal task result: %v", err)
+	}
+	if _, err := testHandler.TaskService.CompleteTask(context.Background(), task.ID, result, "chat-thread-1", "/tmp/worktree"); err != nil {
+		t.Fatalf("CompleteTask: %v", err)
+	}
+
+	comments := listIssueComments(t, issueID)
+	count := 0
+	for _, comment := range comments {
+		if comment.AuthorType == "agent" && comment.Type == "comment" && comment.Content == "Finished the Droid work" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected existing final comment to stay single, got %d", count)
+	}
+}
+
 func TestIssueReassignmentCancelsPriorTaskAndQueuesReplacement(t *testing.T) {
 	agentA := createHandlerAgent(t, "Issue Agent A")
 	agentB := createHandlerAgent(t, "Issue Agent B")
 	issueID := createHandlerIssue(t, "Issue reassignment audit test")
 
 	assignIssueToAgent(t, issueID, uuidToString(agentA.ID))
+	taskA := claimAndStartTaskForAgent(t, uuidToString(agentA.ID))
 	assignIssueToAgent(t, issueID, uuidToString(agentB.ID))
 
 	tasks := listIssueTasks(t, issueID)
@@ -466,6 +607,41 @@ func TestIssueReassignmentCancelsPriorTaskAndQueuesReplacement(t *testing.T) {
 	if statusByAgent[uuidToString(agentB.ID)] != "queued" {
 		t.Fatalf("expected agent B task to be queued, got %q", statusByAgent[uuidToString(agentB.ID)])
 	}
+
+	result, err := json.Marshal(map[string]string{"output": "Stale agent output"})
+	if err != nil {
+		t.Fatalf("failed to marshal task result: %v", err)
+	}
+	if _, err := testHandler.TaskService.CompleteTask(context.Background(), taskA.ID, result, "old-run", "/tmp/old-run"); err == nil {
+		t.Fatal("expected superseded task completion to be rejected")
+	}
+
+	taskB := claimAndStartTaskForAgent(t, uuidToString(agentB.ID))
+	newResult, err := json.Marshal(map[string]string{"output": "Replacement agent output"})
+	if err != nil {
+		t.Fatalf("failed to marshal task result: %v", err)
+	}
+	if _, err := testHandler.TaskService.CompleteTask(context.Background(), taskB.ID, newResult, "new-run", "/tmp/new-run"); err != nil {
+		t.Fatalf("CompleteTask replacement: %v", err)
+	}
+
+	comments := listIssueComments(t, issueID)
+	oldCount := 0
+	newCount := 0
+	for _, comment := range comments {
+		switch comment.Content {
+		case "Stale agent output":
+			oldCount++
+		case "Replacement agent output":
+			newCount++
+		}
+	}
+	if oldCount != 0 {
+		t.Fatalf("expected superseded agent output to be dropped, got %d comments", oldCount)
+	}
+	if newCount != 1 {
+		t.Fatalf("expected replacement agent output exactly once, got %d", newCount)
+	}
 }
 
 func TestIssueTaskFailureCreatesSystemComment(t *testing.T) {
@@ -474,18 +650,143 @@ func TestIssueTaskFailureCreatesSystemComment(t *testing.T) {
 	assignIssueToAgent(t, issueID, uuidToString(agent.ID))
 
 	task := claimAndStartTaskForAgent(t, uuidToString(agent.ID))
-	if _, err := testHandler.TaskService.FailTask(context.Background(), task.ID, "blocked on missing repo access"); err != nil {
+	if _, err := testHandler.TaskService.FailTask(context.Background(), task.ID, "droid crashed"); err != nil {
 		t.Fatalf("FailTask: %v", err)
 	}
 
 	comments := listIssueComments(t, issueID)
 	count := 0
 	for _, comment := range comments {
-		if comment.AuthorType == "agent" && comment.Type == "system" && comment.Content == "blocked on missing repo access" {
+		if comment.AuthorType == "agent" && comment.Type == "system" && comment.Content == "Task failed: droid crashed" {
 			count++
 		}
 	}
 	if count != 1 {
 		t.Fatalf("expected exactly one failure system comment, got %d", count)
+	}
+}
+
+func TestIssueTaskBlockedCreatesDistinctSystemCommentAndTimelineRecord(t *testing.T) {
+	agent := createHandlerAgent(t, "Issue Blocked Agent")
+	issueID := createHandlerIssue(t, "Issue blocked audit test")
+	assignIssueToAgent(t, issueID, uuidToString(agent.ID))
+
+	task := claimAndStartTaskForAgent(t, uuidToString(agent.ID))
+	if _, err := testHandler.TaskService.FailTask(context.Background(), task.ID, "missing repo access", service.TaskTerminalMetadata{
+		State: service.TaskTerminalStateBlocked,
+	}); err != nil {
+		t.Fatalf("FailTask: %v", err)
+	}
+
+	comments := listIssueComments(t, issueID)
+	count := 0
+	for _, comment := range comments {
+		if comment.AuthorType == "agent" && comment.Type == "system" && comment.Content == "Task blocked: missing repo access" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one blocked system comment, got %d", count)
+	}
+
+	timeline := listIssueTimeline(t, issueID)
+	foundBlocked := false
+	for _, entry := range timeline {
+		if entry.Type == "activity" && entry.Action != nil && *entry.Action == "task_blocked" {
+			foundBlocked = true
+			break
+		}
+	}
+	if !foundBlocked {
+		t.Fatal("expected blocked activity to be visible in issue timeline")
+	}
+}
+
+func TestIssueTaskCancellationCreatesSystemComment(t *testing.T) {
+	agent := createHandlerAgent(t, "Issue Cancellation Agent")
+	issueID := createHandlerIssue(t, "Issue cancellation audit test")
+	assignIssueToAgent(t, issueID, uuidToString(agent.ID))
+
+	task := claimAndStartTaskForAgent(t, uuidToString(agent.ID))
+	if _, err := testHandler.TaskService.CancelTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("CancelTask: %v", err)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		comments := listIssueComments(t, issueID)
+		count := 0
+		for _, comment := range comments {
+			if comment.AuthorType == "agent" && comment.Type == "system" && comment.Content == "Task cancelled" {
+				count++
+			}
+		}
+		if count == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected exactly one cancellation system comment, got %d", count)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestIssueReassignmentCreatesCancellationSystemComment(t *testing.T) {
+	agentA := createHandlerAgent(t, "Issue Reassign Cancel Agent A")
+	agentB := createHandlerAgent(t, "Issue Reassign Cancel Agent B")
+	issueID := createHandlerIssue(t, "Issue reassignment cancellation comment test")
+
+	assignIssueToAgent(t, issueID, uuidToString(agentA.ID))
+	assignIssueToAgent(t, issueID, uuidToString(agentB.ID))
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		comments := listIssueComments(t, issueID)
+		count := 0
+		for _, comment := range comments {
+			if comment.AuthorType == "agent" && comment.Type == "system" && comment.Content == "Task superseded by reassignment" {
+				count++
+			}
+		}
+		if count == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected exactly one reassignment cancellation system comment, got %d", count)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	tasks := listIssueTasks(t, issueID)
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 issue tasks, got %d", len(tasks))
+	}
+
+	for _, task := range tasks {
+		if uuidToString(task.AgentID) != uuidToString(agentA.ID) {
+			continue
+		}
+		if task.Status != "cancelled" {
+			t.Fatalf("expected prior task to be cancelled, got %q", task.Status)
+		}
+		var meta map[string]any
+		if err := json.Unmarshal(task.Result, &meta); err != nil {
+			t.Fatalf("expected cancellation metadata result, got %v", err)
+		}
+		if meta["reason"] != service.TaskTerminalReasonSuperseded {
+			t.Fatalf("expected superseded reason, got %#v", meta["reason"])
+		}
+	}
+
+	timeline := listIssueTimeline(t, issueID)
+	foundCancelled := false
+	for _, entry := range timeline {
+		if entry.Type == "activity" && entry.Action != nil && *entry.Action == "task_cancelled" {
+			foundCancelled = true
+			break
+		}
+	}
+	if !foundCancelled {
+		t.Fatal("expected reassignment cancellation to be visible in issue timeline")
 	}
 }

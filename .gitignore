@@ -30,6 +30,8 @@ server/multica
 # Test artifacts
 test-results/
 apps/web/test-results/
+.playwright-cli/
+tmp-debug.png
 
 # context (agent workspace)
 .context

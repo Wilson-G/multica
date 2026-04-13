@@ -57,7 +57,7 @@ import { AvatarGroup, AvatarGroupCount } from "@multica/ui/components/ui/avatar"
 import { ActorAvatar } from "../../common/actor-avatar";
 import type { UpdateIssueRequest, IssueStatus, IssuePriority, TimelineEntry } from "@multica/core/types";
 import { ALL_STATUSES, STATUS_CONFIG, PRIORITY_ORDER, PRIORITY_CONFIG } from "@multica/core/issues/config";
-import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, DueDatePicker, AssigneePicker, canAssignAgent } from ".";
+import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, DueDatePicker, AssigneePicker, filterAssignableAgents } from ".";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { CommentCard } from "./comment-card";
 import { CommentInput } from "./comment-input";
@@ -133,9 +133,22 @@ function formatActivity(
     case "description_updated":
       return "updated the description";
     case "task_completed":
-      return "completed the task";
+      return "completed a run";
+    case "task_blocked":
+      return details.message ? `reported blocked: ${details.message}` : "reported blocked";
     case "task_failed":
-      return "task failed";
+      return details.message ? `task failed: ${details.message}` : "task failed";
+    case "task_cancelled": {
+      if (details.terminal_reason === "superseded") {
+        const nextName = details.superseded_by_agent_id && resolveActorName
+          ? resolveActorName("agent", details.superseded_by_agent_id)
+          : null;
+        return nextName
+          ? `run was superseded by reassignment to ${nextName}`
+          : "run was superseded by reassignment";
+      }
+      return "run was cancelled";
+    }
     default:
       return entry.action ?? "";
   }
@@ -586,7 +599,7 @@ export function IssueDetail({ issueId, onDelete, defaultSidebarOpen = true, layo
                         {issue.assignee_type === "member" && issue.assignee_id === m.user_id && <span className="ml-auto text-xs text-muted-foreground">✓</span>}
                       </DropdownMenuItem>
                     ))}
-                    {agents.filter((a) => !a.archived_at && canAssignAgent(a, user?.id, currentMemberRole)).map((a) => (
+                    {filterAssignableAgents(agents, user?.id, currentMemberRole).map((a) => (
                       <DropdownMenuItem
                         key={a.id}
                         onClick={() => handleUpdateField({ assignee_type: "agent", assignee_id: a.id })}
@@ -1058,6 +1071,7 @@ export function IssueDetail({ issueId, onDelete, defaultSidebarOpen = true, layo
                       prev.action === entry.action &&
                       prev.actor_type === entry.actor_type &&
                       prev.actor_id === entry.actor_id &&
+                      !String(entry.action ?? "").startsWith("task_") &&
                       Math.abs(new Date(entry.created_at).getTime() - new Date(prev.created_at).getTime()) <= COALESCE_MS
                     ) {
                       // Replace previous with this one (keep the later result)

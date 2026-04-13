@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
@@ -24,6 +23,28 @@ type TaskService struct {
 	Queries *db.Queries
 	Hub     *realtime.Hub
 	Bus     *events.Bus
+}
+
+type TaskTerminalState string
+
+const (
+	TaskTerminalStateCompleted TaskTerminalState = "completed"
+	TaskTerminalStateFailed    TaskTerminalState = "failed"
+	TaskTerminalStateBlocked   TaskTerminalState = "blocked"
+	TaskTerminalStateCancelled TaskTerminalState = "cancelled"
+)
+
+const (
+	TaskTerminalReasonSuperseded   = "superseded"
+	TaskTerminalReasonUserCanceled = "user_cancelled"
+)
+
+type TaskTerminalMetadata struct {
+	State               TaskTerminalState `json:"state,omitempty"`
+	Reason              string            `json:"reason,omitempty"`
+	Message             string            `json:"message,omitempty"`
+	SupersededByTaskID  string            `json:"superseded_by_task_id,omitempty"`
+	SupersededByAgentID string            `json:"superseded_by_agent_id,omitempty"`
 }
 
 func NewTaskService(q *db.Queries, hub *realtime.Hub, bus *events.Bus) *TaskService {
@@ -139,19 +160,46 @@ func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSe
 }
 
 // CancelTasksForIssue cancels all active tasks for an issue.
-func (s *TaskService) CancelTasksForIssue(ctx context.Context, issueID pgtype.UUID) error {
-	return s.Queries.CancelAgentTasksByIssue(ctx, issueID)
+func (s *TaskService) CancelTasksForIssue(ctx context.Context, issueID pgtype.UUID, metadata ...TaskTerminalMetadata) error {
+	tasks, err := s.Queries.ListTasksByIssue(ctx, issueID)
+	if err != nil {
+		return fmt.Errorf("list issue tasks for cancellation: %w", err)
+	}
+
+	terminal := firstTaskTerminalMetadata(metadata...)
+	var firstErr error
+	for _, task := range tasks {
+		if task.Status != "queued" && task.Status != "dispatched" && task.Status != "running" {
+			continue
+		}
+		_, err := s.CancelTask(ctx, task.ID, terminal)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
 }
 
 // CancelTask cancels a single task by ID. It broadcasts a task:cancelled event
 // so frontends can update immediately.
-func (s *TaskService) CancelTask(ctx context.Context, taskID pgtype.UUID) (*db.AgentTaskQueue, error) {
-	task, err := s.Queries.CancelAgentTask(ctx, taskID)
+func (s *TaskService) CancelTask(ctx context.Context, taskID pgtype.UUID, metadata ...TaskTerminalMetadata) (*db.AgentTaskQueue, error) {
+	terminal := firstTaskTerminalMetadata(metadata...)
+	terminal.State = TaskTerminalStateCancelled
+
+	task, err := s.Queries.CancelAgentTask(ctx, db.CancelAgentTaskParams{
+		ID:     taskID,
+		Result: marshalTaskTerminalMetadata(terminal),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("cancel task: %w", err)
 	}
 
 	slog.Info("task cancelled", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
+
+	if task.IssueID.Valid {
+		s.createTaskTerminalComment(ctx, task)
+	}
 
 	// Reconcile agent status
 	s.ReconcileAgentStatus(ctx, task.AgentID)
@@ -273,26 +321,27 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 	// Comment-triggered tasks: the agent replies via CLI with --parent, so
 	// posting here would create a duplicate.
 	// Chat tasks: no comment posting needed.
-	if task.IssueID.Valid && !task.TriggerCommentID.Valid {
-		agentCommented, _ := s.Queries.HasAgentCommentedSince(ctx, db.HasAgentCommentedSinceParams{
+	var payload protocol.TaskCompletedPayload
+	if err := json.Unmarshal(result, &payload); err != nil {
+		payload = protocol.TaskCompletedPayload{}
+	}
+
+	if task.IssueID.Valid && !task.TriggerCommentID.Valid && payload.Output != "" {
+		output := redact.Text(payload.Output)
+		agentCommented, _ := s.Queries.HasAgentCommentWithContentSince(ctx, db.HasAgentCommentWithContentSinceParams{
 			IssueID:  task.IssueID,
 			AuthorID: task.AgentID,
+			Content:  output,
 			Since:    task.StartedAt,
 		})
 		if !agentCommented {
-			var payload protocol.TaskCompletedPayload
-			if err := json.Unmarshal(result, &payload); err == nil {
-				if payload.Output != "" {
-					s.createAgentComment(ctx, task.IssueID, task.AgentID, redact.Text(payload.Output), "comment", task.TriggerCommentID)
-				}
-			}
+			s.createAgentComment(ctx, task.IssueID, task.AgentID, output, "comment", task.TriggerCommentID)
 		}
 	}
 
 	// For chat tasks, save assistant reply, update session, and broadcast chat:done.
 	if task.ChatSessionID.Valid {
-		var payload protocol.TaskCompletedPayload
-		if err := json.Unmarshal(result, &payload); err == nil && payload.Output != "" {
+		if payload.Output != "" {
 			if _, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
 				ChatSessionID: task.ChatSessionID,
 				Role:          "assistant",
@@ -321,10 +370,19 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 
 // FailTask marks a task as failed.
 // Issue status is NOT changed here — the agent manages it via the CLI.
-func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg string) (*db.AgentTaskQueue, error) {
+func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg string, metadata ...TaskTerminalMetadata) (*db.AgentTaskQueue, error) {
+	terminal := firstTaskTerminalMetadata(metadata...)
+	if terminal.State == "" {
+		terminal.State = TaskTerminalStateFailed
+	}
+	if terminal.Message == "" {
+		terminal.Message = errMsg
+	}
+
 	task, err := s.Queries.FailAgentTask(ctx, db.FailAgentTaskParams{
-		ID:    taskID,
-		Error: pgtype.Text{String: errMsg, Valid: true},
+		ID:     taskID,
+		Error:  pgtype.Text{String: errMsg, Valid: errMsg != ""},
+		Result: marshalTaskTerminalMetadata(terminal),
 	})
 	if err != nil {
 		if existing, lookupErr := s.Queries.GetAgentTask(ctx, taskID); lookupErr == nil {
@@ -345,8 +403,8 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg s
 
 	slog.Warn("task failed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID), "error", errMsg)
 
-	if errMsg != "" && task.IssueID.Valid {
-		s.createAgentComment(ctx, task.IssueID, task.AgentID, redact.Text(errMsg), "system", task.TriggerCommentID)
+	if task.IssueID.Valid {
+		s.createTaskTerminalComment(ctx, task)
 	}
 	// Reconcile agent status
 	s.ReconcileAgentStatus(ctx, task.AgentID)
@@ -480,11 +538,21 @@ func (s *TaskService) broadcastTaskEvent(ctx context.Context, eventType string, 
 	if workspaceID == "" {
 		return
 	}
+	terminal := taskTerminalMetadata(task)
 	payload := map[string]any{
-		"task_id":  util.UUIDToString(task.ID),
-		"agent_id": util.UUIDToString(task.AgentID),
-		"issue_id": util.UUIDToString(task.IssueID),
-		"status":   task.Status,
+		"task_id":         util.UUIDToString(task.ID),
+		"agent_id":        util.UUIDToString(task.AgentID),
+		"issue_id":        util.UUIDToString(task.IssueID),
+		"status":          task.Status,
+		"terminal_state":  string(terminal.State),
+		"terminal_reason": terminal.Reason,
+		"message":         terminal.Message,
+	}
+	if terminal.SupersededByTaskID != "" {
+		payload["superseded_by_task_id"] = terminal.SupersededByTaskID
+	}
+	if terminal.SupersededByAgentID != "" {
+		payload["superseded_by_agent_id"] = terminal.SupersededByAgentID
 	}
 	if task.ChatSessionID.Valid {
 		payload["chat_session_id"] = util.UUIDToString(task.ChatSessionID)
@@ -593,6 +661,84 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 			"issue_status": issue.Status,
 		},
 	})
+}
+
+func (s *TaskService) createTaskTerminalComment(ctx context.Context, task db.AgentTaskQueue) {
+	if !task.IssueID.Valid {
+		return
+	}
+
+	content := taskTerminalComment(taskTerminalMetadata(task))
+	if content == "" {
+		return
+	}
+
+	s.createAgentComment(ctx, task.IssueID, task.AgentID, redact.Text(content), "system", task.TriggerCommentID)
+}
+
+func firstTaskTerminalMetadata(metadata ...TaskTerminalMetadata) TaskTerminalMetadata {
+	if len(metadata) == 0 {
+		return TaskTerminalMetadata{}
+	}
+	return metadata[0]
+}
+
+func marshalTaskTerminalMetadata(metadata TaskTerminalMetadata) []byte {
+	if metadata.State == "" && metadata.Reason == "" && metadata.Message == "" && metadata.SupersededByTaskID == "" && metadata.SupersededByAgentID == "" {
+		return nil
+	}
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func taskTerminalMetadata(task db.AgentTaskQueue) TaskTerminalMetadata {
+	metadata := TaskTerminalMetadata{}
+	if task.Result != nil {
+		_ = json.Unmarshal(task.Result, &metadata)
+	}
+
+	switch task.Status {
+	case "completed":
+		metadata.State = TaskTerminalStateCompleted
+	case "failed":
+		if metadata.State == "" {
+			metadata.State = TaskTerminalStateFailed
+		}
+		if metadata.Message == "" && task.Error.Valid {
+			metadata.Message = task.Error.String
+		}
+	case "cancelled":
+		if metadata.State == "" {
+			metadata.State = TaskTerminalStateCancelled
+		}
+	}
+
+	return metadata
+}
+
+func taskTerminalComment(metadata TaskTerminalMetadata) string {
+	switch metadata.State {
+	case TaskTerminalStateBlocked:
+		if metadata.Message != "" {
+			return "Task blocked: " + metadata.Message
+		}
+		return "Task blocked"
+	case TaskTerminalStateFailed:
+		if metadata.Message != "" {
+			return "Task failed: " + metadata.Message
+		}
+		return "Task failed"
+	case TaskTerminalStateCancelled:
+		if metadata.Reason == TaskTerminalReasonSuperseded {
+			return "Task superseded by reassignment"
+		}
+		return "Task cancelled"
+	default:
+		return ""
+	}
 }
 
 func issueToMap(issue db.Issue, issuePrefix string) map[string]any {

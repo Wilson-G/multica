@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/redact"
@@ -604,7 +605,9 @@ func (h *Handler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 
 // FailTask marks a running task as failed.
 type TaskFailRequest struct {
-	Error string `json:"error"`
+	Error         string `json:"error"`
+	TerminalState string `json:"terminal_state,omitempty"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
@@ -621,7 +624,10 @@ func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.TaskService.FailTask(r.Context(), parseUUID(taskID), req.Error)
+	task, err := h.TaskService.FailTask(r.Context(), parseUUID(taskID), req.Error, service.TaskTerminalMetadata{
+		State:  service.TaskTerminalState(req.TerminalState),
+		Reason: req.Reason,
+	})
 	if err != nil {
 		slog.Warn("fail task failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())

@@ -1,28 +1,20 @@
 {
   "featureId": "droid-provider-runtime-backend-plumbing",
-  "reviewedAt": "2026-04-13T02:26:15.264455+00:00",
-  "commitId": "16a9d6a87720473631e5df853ebb3ec25af12d68",
+  "reviewedAt": "2026-04-13T05:07:13Z",
+  "commitId": "6e9e04d749c51c1cba495ed8ac7554d8660e1413",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "fail",
+  "status": "pass",
   "codeReview": {
-    "summary": "The feature correctly wires droid into backend selection and daemon runtime registration, but it seeds Droid tasks from the shared Codex home and session paths, which breaks provider isolation and risks using the wrong account/config for Droid executions.",
-    "issues": [
-      {
-        "file": "server/internal/daemon/execenv/execenv.go",
-        "line": 109,
-        "severity": "blocking",
-        "description": "Droid is funneled through `prepareCodexHome`, which clones/symlinks the shared `~/.codex` state into each Droid task environment. Combined with `server/internal/daemon/daemon.go:955-957`, Droid runs inherit Codex auth/config/session storage instead of an isolated Droid home, so a machine configured only for Droid (or with different Droid vs Codex accounts/settings) will fail or run under the wrong identity. This violates the feature requirement that droid be a first-class provider rather than piggybacking on Codex user state."
-      }
-    ]
+    "summary": "Re-reviewed the current provider-runtime worktree after the follow-up isolation fix. Droid remains wired as a first-class backend/runtime provider, and the exec environment no longer depends on shared Codex home/auth/session state.",
+    "issues": []
   },
   "sharedStateObservations": [
     {
-      "area": "knowledge",
-      "observation": "The backend-runtime skill says to write/update tests first and confirm a failing run before implementation, but the worker transcript shows they added tests and only ran them after implementing the code. If the mission expects strict red-green evidence, the skill should either be enforced or updated to reflect acceptable deviations when a provider path does not exist yet.",
-      "evidence": "Transcript skeleton for worker session 57015433-e01c-4dc5-83ea-07b123d849fd plus handoff.skillFeedback.deviations explicitly note skipping a captured failing test run for step 3 of .factory/skills/backend-runtime-worker/SKILL.md."
+      "area": "follow-up-fix",
+      "observation": "The original scrutiny blocker on Droid home reuse is now closed by the completed `provider-runtime-droid-home-isolation-fix` feature and its targeted backend coverage."
     }
   ],
-  "addressesFailureFrom": null,
-  "summary": "Reviewed the feature handoff, transcript skeleton, skill guidance, and commit 16a9d6a87720473631e5df853ebb3ec25af12d68. Found one blocking correctness issue: Droid execution is registered as a native provider but still reuses the shared Codex home/auth/session state, so provider isolation is incomplete and real Droid executions can run with the wrong credentials or configuration."
+  "addressesFailureFrom": "provider-runtime round 1",
+  "summary": "Pass. Current backend/runtime plumbing preserves native Droid provider selection and isolated execution state, so I did not find a remaining correctness blocker in this slice."
 }

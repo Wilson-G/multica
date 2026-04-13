@@ -432,8 +432,8 @@ func (h *Handler) enqueueMentionedAgentTasks(ctx context.Context, issue db.Issue
 		}
 		// Resolve thread root for reply threading.
 		replyTo := comment.ID
-		if comment.ParentID.Valid {
-			replyTo = comment.ParentID
+		if parentComment != nil {
+			replyTo = parentComment.ID
 		}
 		if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, agentUUID, replyTo); err != nil {
 			slog.Warn("enqueue mention agent task failed", "issue_id", uuidToString(issue.ID), "agent_id", m.ID, "error", err)

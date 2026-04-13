@@ -1,0 +1,63 @@
+{
+  "milestone": "interaction-surfaces",
+  "flowId": "interaction-surfaces-browser",
+  "validatedAt": "2026-04-13T05:07:13Z",
+  "browserSession": "mission4681c",
+  "fixturePrefix": "mission-closure-v2-1776056020372",
+  "agents": {
+    "primaryDroid": "ca07572d-01d0-456c-994e-750204055258",
+    "secondaryDroid": "6119b102-63bc-4ea2-aca6-c14553233057",
+    "privateDroid": "bf014092-4e00-4c42-b8ea-729808331d17",
+    "archivedDroid": "0299909a-da99-4e93-b85e-cc45637761cf"
+  },
+  "issueFixtures": {
+    "completedIssue": "b2daed0a-2abf-4868-9a6c-4da6ed55b7b0",
+    "reassignedIssue": "c0e3f1bc-a8ef-421c-a400-cbf387f06561",
+    "blockedIssue": "d5a0a0a3-38aa-43a0-bebb-1b93913a40e9",
+    "archivedHistoryIssue": "c1c86ba7-7104-42be-aac9-63cbfcbaf9a9",
+    "archivedAssignmentDeniedIssue": "5ae41c48-5a59-42fb-a891-5b2d7d77c863",
+    "ownerPrivateAssignIssue": "d7ebc297-87d5-4138-8af9-942623ec4b74"
+  },
+  "chatFixtures": {
+    "twoTurnSession": "1a4f2463-536d-411f-8ab6-d05196c49845",
+    "failedSession": "6266a289-fcec-4ff5-9eae-c229f0f06341",
+    "archivedHistorySession": "eed73314-1598-4dec-8969-58030e62c998",
+    "firstTurnDeniedSession": "812395fa-11fe-49b4-a01a-f3220993f0e2",
+    "ownerPrivateChatSession": "0ce4bda8-5933-44fb-97bb-57132a8070fd"
+  },
+  "memberFixture": {
+    "email": "mission-closure-v2-1776056020372@multica.ai",
+    "userId": "e311a4e3-20bb-4a66-a00e-8706544a0c07"
+  },
+  "steps": [
+    {
+      "step": "Verify issue terminal-state surfaces",
+      "observed": "Assignment completion renders exactly once, reassignment supersedes the old run with visible cancellation metadata, and blocked runs remain inspectable with a distinct durable marker.",
+      "evidence": [
+        "screenshots/issue-completed-once.png",
+        "screenshots/issue-reassigned-superseded.png",
+        "screenshots/issue-blocked-history.png"
+      ]
+    },
+    {
+      "step": "Verify archived and failed chat behavior",
+      "observed": "Archived sessions remain readable with disabled input, failed turns show a durable marker without a fabricated assistant reply, and archived-agent history remains readable while new sends are denied.",
+      "evidence": [
+        "screenshots/chat-archived-disabled.png",
+        "screenshots/chat-failed-session.png",
+        "screenshots/chat-archived-agent-history.png",
+        "screenshots/chat-archived-agent-selected.png",
+        "screenshots/chat-current.png"
+      ]
+    },
+    {
+      "step": "Verify cross-surface permissions and history consistency",
+      "observed": "Private and archived Droid agents enforce the same allow or deny semantics across assignment and chat, while prior issue, chat, and transcript history stays readable and attributable.",
+      "evidence": [
+        "screenshots/issue-completed-once.png",
+        "screenshots/chat-archived-agent-history.png",
+        "../../provider-runtime/user-testing/screenshots/offline-transcript-droid.png"
+      ]
+    }
+  ]
+}

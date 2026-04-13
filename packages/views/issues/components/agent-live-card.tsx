@@ -12,6 +12,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@multica/ui/components/ui/collapsible";
 import { useActorName } from "@multica/core/workspace/hooks";
 import { redactSecrets } from "../utils/redact";
+import { getTaskTerminalInfo, getTaskTerminalLabel, getTaskTerminalSummary, getTaskTerminalTone } from "../utils/task-terminal";
 import { AgentTranscriptDialog } from "./agent-transcript-dialog";
 
 // ─── Shared types & helpers ─────────────────────────────────────────────────
@@ -48,6 +49,20 @@ function shortenPath(p: string): string {
   const parts = p.split("/");
   if (parts.length <= 3) return p;
   return ".../" + parts.slice(-2).join("/");
+}
+
+function terminalToneClasses(tone: ReturnType<typeof getTaskTerminalTone>): string {
+  switch (tone) {
+    case "success":
+      return "text-success";
+    case "warning":
+      return "text-warning";
+    case "muted":
+      return "text-muted-foreground";
+    case "destructive":
+    default:
+      return "text-destructive";
+  }
 }
 
 function getToolSummary(item: TimelineItem): string {
@@ -492,6 +507,10 @@ function TaskRunEntry({ task }: { task: AgentTask }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<TimelineItem[] | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const terminalInfo = getTaskTerminalInfo(task);
+  const terminalLabel = getTaskTerminalLabel(terminalInfo);
+  const terminalSummary = getTaskTerminalSummary(terminalInfo, getActorName);
+  const terminalTone = getTaskTerminalTone(terminalInfo);
 
   const loadMessages = useCallback(() => {
     if (items !== null) return; // already loaded
@@ -515,8 +534,12 @@ function TaskRunEntry({ task }: { task: AgentTask }) {
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/30 transition-colors border border-transparent hover:border-border">
         <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
-        {task.status === "completed" ? (
+        {terminalInfo.state === "completed" ? (
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+        ) : terminalInfo.state === "blocked" ? (
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-warning" />
+        ) : terminalInfo.state === "cancelled" ? (
+          <Square className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         ) : (
           <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
         )}
@@ -524,8 +547,8 @@ function TaskRunEntry({ task }: { task: AgentTask }) {
           {new Date(task.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
         </span>
         {duration && <span className="text-muted-foreground">{duration}</span>}
-        <span className={cn("ml-auto capitalize", task.status === "completed" ? "text-success" : "text-destructive")}>
-          {task.status}
+        <span className={cn("ml-auto", terminalToneClasses(terminalTone))}>
+          {terminalLabel}
         </span>
         <span
           role="button"
@@ -561,6 +584,11 @@ function TaskRunEntry({ task }: { task: AgentTask }) {
             <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
               <Loader2 className="h-3 w-3 animate-spin" />
               Loading...
+            </div>
+          ) : items.length === 0 && terminalSummary ? (
+            <div className="rounded border bg-background/80 px-3 py-2">
+              <p className={cn("text-xs font-medium", terminalToneClasses(terminalTone))}>{terminalLabel}</p>
+              <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words">{terminalSummary}</p>
             </div>
           ) : items.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2">No execution data recorded.</p>

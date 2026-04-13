@@ -122,7 +122,7 @@ LIMIT 1;
 
 -- name: FailAgentTask :one
 UPDATE agent_task_queue
-SET status = 'failed', completed_at = now(), error = $2
+SET status = 'failed', completed_at = now(), error = $2, result = sqlc.narg('result')
 WHERE id = $1 AND status IN ('dispatched', 'running')
 RETURNING *;
 
@@ -138,7 +138,7 @@ RETURNING id, agent_id, issue_id;
 
 -- name: CancelAgentTask :one
 UPDATE agent_task_queue
-SET status = 'cancelled', completed_at = now()
+SET status = 'cancelled', completed_at = now(), result = sqlc.narg('result')
 WHERE id = $1 AND status IN ('queued', 'dispatched', 'running')
 RETURNING *;
 

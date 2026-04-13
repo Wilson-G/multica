@@ -32,19 +32,40 @@ export type ChatTurnState =
   | { tone: "cancelled"; label: string }
   | null;
 
+function readTaskResultString(result: unknown, key: string): string | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return null;
+  }
+
+  const value = (result as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 export function getChatTurnState(task: AgentTask | null | undefined): ChatTurnState {
   if (!task) {
     return null;
   }
+
+  const terminalState = readTaskResultString(task.result, "state");
+  const terminalReason = readTaskResultString(task.result, "reason");
+  const terminalMessage = readTaskResultString(task.result, "message");
+  const taskError = task.error?.trim() || null;
+
   switch (task.status) {
     case "queued":
     case "dispatched":
     case "running":
       return { tone: "running", label: "Running" };
     case "failed":
-      return { tone: "failed", label: task.error?.trim() || "Failed" };
+      return {
+        tone: "failed",
+        label: terminalMessage ?? (terminalState === "blocked" ? "Blocked" : taskError ?? "Failed"),
+      };
     case "cancelled":
-      return { tone: "cancelled", label: "Cancelled" };
+      return {
+        tone: "cancelled",
+        label: terminalReason === "superseded" ? "Superseded" : terminalMessage ?? "Cancelled",
+      };
     default:
       return null;
   }

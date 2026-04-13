@@ -122,10 +122,17 @@ func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []Tas
 	}, nil)
 }
 
-func (c *Client) FailTask(ctx context.Context, taskID, errMsg string) error {
-	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/fail", taskID), map[string]any{
+func (c *Client) FailTask(ctx context.Context, taskID, errMsg, terminalState, reason string) error {
+	body := map[string]any{
 		"error": errMsg,
-	}, nil)
+	}
+	if terminalState != "" {
+		body["terminal_state"] = terminalState
+	}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/fail", taskID), body, nil)
 }
 
 // GetTaskStatus returns the current status of a task. Used by the daemon to

@@ -16,32 +16,33 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // IssueResponse is the JSON response for an issue.
 type IssueResponse struct {
-	ID                 string                  `json:"id"`
-	WorkspaceID        string                  `json:"workspace_id"`
-	Number             int32                   `json:"number"`
-	Identifier         string                  `json:"identifier"`
-	Title              string                  `json:"title"`
-	Description        *string                 `json:"description"`
-	Status             string                  `json:"status"`
-	Priority           string                  `json:"priority"`
-	AssigneeType       *string                 `json:"assignee_type"`
-	AssigneeID         *string                 `json:"assignee_id"`
-	CreatorType        string                  `json:"creator_type"`
-	CreatorID          string                  `json:"creator_id"`
-	ParentIssueID      *string                 `json:"parent_issue_id"`
-	ProjectID          *string                 `json:"project_id"`
-	Position           float64                 `json:"position"`
-	DueDate            *string                 `json:"due_date"`
-	CreatedAt          string                  `json:"created_at"`
-	UpdatedAt          string                  `json:"updated_at"`
-	Reactions          []IssueReactionResponse `json:"reactions,omitempty"`
-	Attachments        []AttachmentResponse    `json:"attachments,omitempty"`
+	ID            string                  `json:"id"`
+	WorkspaceID   string                  `json:"workspace_id"`
+	Number        int32                   `json:"number"`
+	Identifier    string                  `json:"identifier"`
+	Title         string                  `json:"title"`
+	Description   *string                 `json:"description"`
+	Status        string                  `json:"status"`
+	Priority      string                  `json:"priority"`
+	AssigneeType  *string                 `json:"assignee_type"`
+	AssigneeID    *string                 `json:"assignee_id"`
+	CreatorType   string                  `json:"creator_type"`
+	CreatorID     string                  `json:"creator_id"`
+	ParentIssueID *string                 `json:"parent_issue_id"`
+	ProjectID     *string                 `json:"project_id"`
+	Position      float64                 `json:"position"`
+	DueDate       *string                 `json:"due_date"`
+	CreatedAt     string                  `json:"created_at"`
+	UpdatedAt     string                  `json:"updated_at"`
+	Reactions     []IssueReactionResponse `json:"reactions,omitempty"`
+	Attachments   []AttachmentResponse    `json:"attachments,omitempty"`
 }
 
 func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
@@ -242,7 +243,7 @@ func buildSearchQuery(phrase string, terms []string, queryNum int, hasNum bool, 
 	}
 
 	escapedPhrase := escapeLike(phrase)
-	phraseParam := nextArg(escapedPhrase)               // $1
+	phraseParam := nextArg(escapedPhrase) // $1
 	phraseContains := "'%' || " + phraseParam + " || '%'"
 	phraseStartsWith := phraseParam + " || '%'"
 
@@ -728,16 +729,16 @@ func (h *Handler) ListChildIssues(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateIssueRequest struct {
-	Title              string   `json:"title"`
-	Description        *string  `json:"description"`
-	Status             string   `json:"status"`
-	Priority           string   `json:"priority"`
-	AssigneeType       *string  `json:"assignee_type"`
-	AssigneeID         *string  `json:"assignee_id"`
-	ParentIssueID      *string  `json:"parent_issue_id"`
-	ProjectID          *string  `json:"project_id"`
-	DueDate            *string  `json:"due_date"`
-	AttachmentIDs      []string `json:"attachment_ids,omitempty"`
+	Title         string   `json:"title"`
+	Description   *string  `json:"description"`
+	Status        string   `json:"status"`
+	Priority      string   `json:"priority"`
+	AssigneeType  *string  `json:"assignee_type"`
+	AssigneeID    *string  `json:"assignee_id"`
+	ParentIssueID *string  `json:"parent_issue_id"`
+	ProjectID     *string  `json:"project_id"`
+	DueDate       *string  `json:"due_date"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
 func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
@@ -780,8 +781,8 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Enforce agent visibility: private agents can only be assigned by owner/admin.
 	if req.AssigneeType != nil && *req.AssigneeType == "agent" && req.AssigneeID != nil {
-		if ok, msg := h.canAssignAgent(r.Context(), r, *req.AssigneeID, workspaceID); !ok {
-			writeError(w, http.StatusForbidden, msg)
+		if ok, status, msg := h.canAssignAgent(r.Context(), r, *req.AssigneeID, workspaceID); !ok {
+			writeError(w, status, msg)
 			return
 		}
 	}
@@ -831,20 +832,25 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	creatorType, actualCreatorID := h.resolveActor(r, creatorID, workspaceID)
 
 	issue, err := qtx.CreateIssue(r.Context(), db.CreateIssueParams{
-		WorkspaceID:        parseUUID(workspaceID),
-		Title:              req.Title,
-		Description:        ptrToText(req.Description),
-		Status:             status,
-		Priority:           priority,
-		AssigneeType:       assigneeType,
-		AssigneeID:         assigneeID,
-		CreatorType:        creatorType,
-		CreatorID:          parseUUID(actualCreatorID),
-		ParentIssueID:      parentIssueID,
-		Position:           0,
-		DueDate:            dueDate,
-		Number:             issueNumber,
-		ProjectID:          func() pgtype.UUID { if req.ProjectID != nil { return parseUUID(*req.ProjectID) }; return pgtype.UUID{} }(),
+		WorkspaceID:   parseUUID(workspaceID),
+		Title:         req.Title,
+		Description:   ptrToText(req.Description),
+		Status:        status,
+		Priority:      priority,
+		AssigneeType:  assigneeType,
+		AssigneeID:    assigneeID,
+		CreatorType:   creatorType,
+		CreatorID:     parseUUID(actualCreatorID),
+		ParentIssueID: parentIssueID,
+		Position:      0,
+		DueDate:       dueDate,
+		Number:        issueNumber,
+		ProjectID: func() pgtype.UUID {
+			if req.ProjectID != nil {
+				return parseUUID(*req.ProjectID)
+			}
+			return pgtype.UUID{}
+		}(),
 	})
 	if err != nil {
 		slog.Warn("create issue failed", append(logger.RequestAttrs(r), "error", err, "workspace_id", workspaceID)...)
@@ -893,16 +899,16 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateIssueRequest struct {
-	Title              *string  `json:"title"`
-	Description        *string  `json:"description"`
-	Status             *string  `json:"status"`
-	Priority           *string  `json:"priority"`
-	AssigneeType       *string  `json:"assignee_type"`
-	AssigneeID         *string  `json:"assignee_id"`
-	Position           *float64 `json:"position"`
-	DueDate            *string  `json:"due_date"`
-	ParentIssueID      *string  `json:"parent_issue_id"`
-	ProjectID          *string  `json:"project_id"`
+	Title         *string  `json:"title"`
+	Description   *string  `json:"description"`
+	Status        *string  `json:"status"`
+	Priority      *string  `json:"priority"`
+	AssigneeType  *string  `json:"assignee_type"`
+	AssigneeID    *string  `json:"assignee_id"`
+	Position      *float64 `json:"position"`
+	DueDate       *string  `json:"due_date"`
+	ParentIssueID *string  `json:"parent_issue_id"`
+	ProjectID     *string  `json:"project_id"`
 }
 
 func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
@@ -1028,8 +1034,8 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Enforce agent visibility: private agents can only be assigned by owner/admin.
 	if req.AssigneeType != nil && *req.AssigneeType == "agent" && req.AssigneeID != nil {
-		if ok, msg := h.canAssignAgent(r.Context(), r, *req.AssigneeID, workspaceID); !ok {
-			writeError(w, http.StatusForbidden, msg)
+		if ok, status, msg := h.canAssignAgent(r.Context(), r, *req.AssigneeID, workspaceID); !ok {
+			writeError(w, status, msg)
 			return
 		}
 	}
@@ -1080,9 +1086,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// Reconcile task queue when assignee changes (not on status changes —
 	// agents manage issue status themselves via the CLI).
 	if assigneeChanged {
-		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
+		shouldEnqueue := h.shouldEnqueueAgentTask(r.Context(), issue)
+		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID, issueAssigneeTerminalMetadata(issue, shouldEnqueue))
 
-		if h.shouldEnqueueAgentTask(r.Context(), issue) {
+		if shouldEnqueue {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
 		}
 	}
@@ -1093,32 +1100,9 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 // canAssignAgent checks whether the requesting user is allowed to assign issues
 // to the given agent. Private agents can only be assigned by their owner or
 // workspace admins/owners.
-func (h *Handler) canAssignAgent(ctx context.Context, r *http.Request, agentID, workspaceID string) (bool, string) {
-	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-		ID:          parseUUID(agentID),
-		WorkspaceID: parseUUID(workspaceID),
-	})
-	if err != nil {
-		return false, "agent not found"
-	}
-	if agent.ArchivedAt.Valid {
-		return false, "cannot assign to archived agent"
-	}
-	if agent.Visibility != "private" {
-		return true, ""
-	}
-	userID := requestUserID(r)
-	if uuidToString(agent.OwnerID) == userID {
-		return true, ""
-	}
-	member, err := h.getWorkspaceMember(ctx, userID, workspaceID)
-	if err != nil {
-		return false, "cannot assign to private agent"
-	}
-	if roleAllowed(member.Role, "owner", "admin") {
-		return true, ""
-	}
-	return false, "cannot assign to private agent"
+func (h *Handler) canAssignAgent(ctx context.Context, r *http.Request, agentID, workspaceID string) (bool, int, string) {
+	_, status, msg, ok := h.authorizeAgentForNewWork(ctx, r, agentID, workspaceID, "cannot assign to private agent")
+	return ok, status, msg
 }
 
 // shouldEnqueueAgentTask returns true when an issue assignment should trigger
@@ -1193,6 +1177,15 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	h.publish(protocol.EventIssueDeleted, uuidToString(issue.WorkspaceID), actorType, actorID, map[string]any{"issue_id": id})
 	slog.Info("issue deleted", append(logger.RequestAttrs(r), "issue_id", id, "workspace_id", uuidToString(issue.WorkspaceID))...)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func issueAssigneeTerminalMetadata(issue db.Issue, shouldEnqueue bool) service.TaskTerminalMetadata {
+	metadata := service.TaskTerminalMetadata{State: service.TaskTerminalStateCancelled}
+	if shouldEnqueue && issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
+		metadata.Reason = service.TaskTerminalReasonSuperseded
+		metadata.SupersededByAgentID = uuidToString(issue.AssigneeID)
+	}
+	return metadata
 }
 
 // ---------------------------------------------------------------------------
@@ -1342,7 +1335,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 
 		// Enforce agent visibility for batch assignment.
 		if req.Updates.AssigneeType != nil && *req.Updates.AssigneeType == "agent" && req.Updates.AssigneeID != nil {
-			if ok, _ := h.canAssignAgent(r.Context(), r, *req.Updates.AssigneeID, workspaceID); !ok {
+			if ok, _, _ := h.canAssignAgent(r.Context(), r, *req.Updates.AssigneeID, workspaceID); !ok {
 				continue
 			}
 		}
@@ -1370,8 +1363,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if assigneeChanged {
-			h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
-			if h.shouldEnqueueAgentTask(r.Context(), issue) {
+			shouldEnqueue := h.shouldEnqueueAgentTask(r.Context(), issue)
+			h.TaskService.CancelTasksForIssue(r.Context(), issue.ID, issueAssigneeTerminalMetadata(issue, shouldEnqueue))
+			if shouldEnqueue {
 				h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
 			}
 		}

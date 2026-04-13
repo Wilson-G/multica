@@ -1,0 +1,223 @@
+{
+  "milestone": "interaction-surfaces",
+  "round": 1,
+  "status": "pass",
+  "validatedAt": "2026-04-13T05:07:13Z",
+  "assertionsSummary": {
+    "total": 22,
+    "passed": 22,
+    "failed": 0
+  },
+  "assertions": {
+    "VAL-ISSUE-001": {
+      "status": "passed",
+      "method": "test+api",
+      "summary": "Issue assignment creates one Droid task even from non-default issue states.",
+      "evidence": [
+        "server/cmd/server/comment_trigger_integration_test.go",
+        "issue:b2daed0a-2abf-4868-9a6c-4da6ed55b7b0"
+      ]
+    },
+    "VAL-ISSUE-002": {
+      "status": "passed",
+      "method": "test",
+      "summary": "Directed member comments and assignee-addressed replies retrigger Droid and keep output anchored to the relevant thread root.",
+      "evidence": [
+        "server/cmd/server/comment_trigger_integration_test.go"
+      ]
+    },
+    "VAL-ISSUE-003": {
+      "status": "passed",
+      "method": "test",
+      "summary": "Broadcasts, member-only replies, and comments directed elsewhere do not auto-trigger Droid.",
+      "evidence": [
+        "server/cmd/server/comment_trigger_integration_test.go"
+      ]
+    },
+    "VAL-ISSUE-004": {
+      "status": "passed",
+      "method": "test",
+      "summary": "Explicit Droid mentions still trigger work on unassigned or terminal issues.",
+      "evidence": [
+        "server/cmd/server/comment_trigger_integration_test.go"
+      ]
+    },
+    "VAL-ISSUE-005": {
+      "status": "passed",
+      "method": "test",
+      "summary": "Plain follow-up replies inherit the root Droid mention exactly in the supported cases and do not misfire when redirected elsewhere.",
+      "evidence": [
+        "server/cmd/server/comment_trigger_integration_test.go"
+      ]
+    },
+    "VAL-ISSUE-006": {
+      "status": "passed",
+      "method": "browser+api+test",
+      "summary": "Assignment-originated completion output appears exactly once in visible issue history.",
+      "evidence": [
+        "screenshots/issue-completed-once.png",
+        "issue:b2daed0a-2abf-4868-9a6c-4da6ed55b7b0",
+        "server/internal/handler/chat_issue_interactions_test.go"
+      ]
+    },
+    "VAL-ISSUE-007": {
+      "status": "passed",
+      "method": "browser+api+test",
+      "summary": "Reassignment visibly supersedes the old run, leaves one cancellation marker, and routes exactly one replacement task.",
+      "evidence": [
+        "screenshots/issue-reassigned-superseded.png",
+        "issue:c0e3f1bc-a8ef-421c-a400-cbf387f06561",
+        "server/internal/handler/chat_issue_interactions_test.go"
+      ]
+    },
+    "VAL-ISSUE-008": {
+      "status": "passed",
+      "method": "browser+api+test",
+      "summary": "Blocked, failed, cancelled, and superseded issue runs keep durable, distinguishable history and transcript metadata.",
+      "evidence": [
+        "screenshots/issue-blocked-history.png",
+        "issue:d5a0a0a3-38aa-43a0-bebb-1b93913a40e9",
+        "server/internal/handler/chat_issue_interactions_test.go",
+        "server/internal/service/task_terminal_test.go"
+      ]
+    },
+    "VAL-CHAT-001": {
+      "status": "passed",
+      "method": "browser+api",
+      "summary": "Users can start a chat session with a Droid-backed agent as a first-class conversation.",
+      "evidence": [
+        "screenshots/chat-current.png",
+        "session:1a4f2463-536d-411f-8ab6-d05196c49845"
+      ]
+    },
+    "VAL-CHAT-002": {
+      "status": "passed",
+      "method": "api+test",
+      "summary": "The first chat message creates one persisted user message, one task binding, and the expected pending task state.",
+      "evidence": [
+        "server/cmd/server/chat_cross_surface_integration_test.go",
+        "session:1a4f2463-536d-411f-8ab6-d05196c49845"
+      ]
+    },
+    "VAL-CHAT-003": {
+      "status": "passed",
+      "method": "browser+test",
+      "summary": "The live chat flow continued to expose Droid execution activity during the validated two-turn browser flow, with chat state helpers preserving the active task marker logic.",
+      "evidence": [
+        "screenshots/chat-current.png",
+        "packages/views/chat/components/chat-state.test.ts"
+      ]
+    },
+    "VAL-CHAT-004": {
+      "status": "passed",
+      "method": "browser+api+test",
+      "summary": "Completed Droid replies persist, clear pending state, and remain reload-stable with the original agent identity.",
+      "evidence": [
+        "screenshots/chat-current.png",
+        "session:1a4f2463-536d-411f-8ab6-d05196c49845",
+        "packages/views/chat/components/chat-state.test.ts"
+      ]
+    },
+    "VAL-CHAT-005": {
+      "status": "passed",
+      "method": "browser+api",
+      "summary": "A second turn stays in the same persisted Droid chat session and preserves prior context.",
+      "evidence": [
+        "screenshots/chat-current.png",
+        "session:1a4f2463-536d-411f-8ab6-d05196c49845"
+      ]
+    },
+    "VAL-CHAT-006": {
+      "status": "passed",
+      "method": "browser+api+test",
+      "summary": "Archived sessions remain readable, keep history intact, and reject new sends without silently spawning new work.",
+      "evidence": [
+        "screenshots/chat-archived-disabled.png",
+        "session:1a4f2463-536d-411f-8ab6-d05196c49845",
+        "packages/views/chat/components/chat-session-history.test.tsx"
+      ]
+    },
+    "VAL-CHAT-007": {
+      "status": "passed",
+      "method": "browser+api+test",
+      "summary": "Failed or cancelled chat turns clear live state, leave a durable failure marker, and do not fabricate assistant replies.",
+      "evidence": [
+        "screenshots/chat-failed-session.png",
+        "session:6266a289-fcec-4ff5-9eae-c229f0f06341",
+        "packages/views/chat/components/chat-state.test.ts"
+      ]
+    },
+    "VAL-CHAT-008": {
+      "status": "passed",
+      "method": "api",
+      "summary": "A first-turn send failure leaves no orphaned normal message: the denied archived-agent session has zero persisted messages after rejection.",
+      "evidence": [
+        "session:812395fa-11fe-49b4-a01a-f3220993f0e2"
+      ]
+    },
+    "VAL-CROSS-001": {
+      "status": "passed",
+      "method": "browser+api",
+      "summary": "The same Droid runtime was used to create a Droid agent that immediately executed assignment-created work without operator-only steps.",
+      "evidence": [
+        "../../provider-runtime/user-testing/screenshots/runtime-picker-droid.png",
+        "../../provider-runtime/user-testing/screenshots/created-agent-list.png",
+        "issue:b2daed0a-2abf-4868-9a6c-4da6ed55b7b0"
+      ]
+    },
+    "VAL-CROSS-002": {
+      "status": "passed",
+      "method": "api+test",
+      "summary": "Assignment and explicit mention both produce inspectable Droid task provenance with stable agent and runtime metadata.",
+      "evidence": [
+        "server/cmd/server/chat_cross_surface_integration_test.go"
+      ]
+    },
+    "VAL-CROSS-003": {
+      "status": "passed",
+      "method": "api+test",
+      "summary": "Assignment and chat entry points enforce the same availability and permission rules for Droid agents.",
+      "evidence": [
+        "packages/views/issues/components/pickers/assignee-picker.test.ts",
+        "server/cmd/server/chat_cross_surface_integration_test.go"
+      ]
+    },
+    "VAL-CROSS-004": {
+      "status": "passed",
+      "method": "browser+api",
+      "summary": "Droid-authored results remain first-class across issue comments, chat replies, and transcript/history surfaces.",
+      "evidence": [
+        "screenshots/issue-completed-once.png",
+        "screenshots/chat-current.png",
+        "../../provider-runtime/user-testing/screenshots/offline-transcript-droid.png"
+      ]
+    },
+    "VAL-CROSS-005": {
+      "status": "passed",
+      "method": "api+test",
+      "summary": "Private Droid agents deny both assignment and chat for non-owners while allowing both for the owner.",
+      "evidence": [
+        "member:e311a4e3-20bb-4a66-a00e-8706544a0c07",
+        "session:0ce4bda8-5933-44fb-97bb-57132a8070fd",
+        "issue:d7ebc297-87d5-4138-8af9-942623ec4b74",
+        "server/cmd/server/chat_cross_surface_integration_test.go",
+        "packages/views/issues/components/pickers/assignee-picker.test.ts"
+      ]
+    },
+    "VAL-CROSS-006": {
+      "status": "passed",
+      "method": "browser+api+test",
+      "summary": "Archived Droid agents stop new assignment and chat work while preserving readable issue, chat, and transcript history.",
+      "evidence": [
+        "screenshots/chat-archived-agent-history.png",
+        "screenshots/chat-archived-agent-selected.png",
+        "issue:c1c86ba7-7104-42be-aac9-63cbfcbaf9a9",
+        "issue:5ae41c48-5a59-42fb-a891-5b2d7d77c863",
+        "session:eed73314-1598-4dec-8969-58030e62c998",
+        "server/cmd/server/chat_cross_surface_integration_test.go"
+      ]
+    }
+  },
+  "blockingIssues": [],
+  "summary": "Interaction-surfaces user testing passed. Browser evidence on the current worktree, API lifecycle fixtures from `mission-closure-v2-1776056020372`, and targeted automated coverage collectively close all issue, chat, and cross-surface assertions."
+}

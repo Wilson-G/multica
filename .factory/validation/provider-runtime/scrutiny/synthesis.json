@@ -1,7 +1,8 @@
 {
   "milestone": "provider-runtime",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
+  "validatedAt": "2026-04-13T05:07:13Z",
   "validatorsRun": {
     "test": {
       "passed": true,
@@ -21,46 +22,50 @@
   },
   "reviewsSummary": {
     "total": 3,
-    "passed": 1,
-    "failed": 2,
-    "failedFeatures": [
-      "droid-provider-runtime-backend-plumbing",
-      "droid-runtime-ui-and-agent-binding-surfaces"
-    ]
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
   },
-  "blockingIssues": [
+  "blockingIssues": [],
+  "appliedUpdates": [
     {
-      "featureId": "droid-provider-runtime-backend-plumbing",
-      "severity": "blocking",
-      "description": "Droid execution still reuses Codex home/auth/session state via `prepareCodexHome`, so a native Droid provider run can execute with the wrong credentials or fail on machines configured only for Droid."
+      "featureId": "provider-runtime-droid-home-isolation-fix",
+      "effect": "Resolved the round-1 blocker where Droid execution reused Codex home/auth/session state."
     },
     {
-      "featureId": "droid-runtime-ui-and-agent-binding-surfaces",
-      "severity": "blocking",
-      "description": "Agent detail loses Droid provider attribution when the bound runtime is offline or absent from the live runtime list, breaking the required stable provider binding across reloads and liveness changes."
+      "featureId": "provider-runtime-offline-provider-attribution-fix",
+      "effect": "Resolved the round-1 blocker where offline runtime detail and transcript surfaces lost Droid provider attribution."
     }
   ],
-  "appliedUpdates": [],
-  "suggestedGuidanceUpdates": [
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [
     {
-      "target": "skill:backend-runtime-worker",
-      "suggestion": "Clarify whether strict red-green evidence is mandatory for backend runtime features where the provider path does not exist yet, or enforce capturing a failing targeted test run before implementation.",
-      "evidence": "The review for `droid-provider-runtime-backend-plumbing` noted the worker added tests but only ran them after implementation, despite the skill currently instructing a failing test first.",
-      "isSystemic": false
-    },
-    {
-      "target": "skill:product-surface-worker",
-      "suggestion": "Clarify or enforce the requirement to add focused automated coverage for UI/provider-attribution work before implementation, especially for offline/history fallback states.",
-      "evidence": "The review for `droid-runtime-ui-and-agent-binding-surfaces` found a blocking offline-runtime attribution bug and noted that the feature shipped without new tests for the touched surfaces.",
-      "isSystemic": false
-    },
-    {
-      "target": "skill:validation-hardening-worker",
-      "suggestion": "Document that broken local daemon PAT/workspace auth can block required browser confirmation even when the code fix is correct, and spell out the prerequisite checks explicitly.",
-      "evidence": "The review for `provider-runtime-browser-auth-and-daemon-bootstrap` passed the code changes but recorded that browser confirmation was blocked by invalid daemon auth until library guidance was updated.",
-      "isSystemic": false
+      "observation": "The untracked `.playwright-cli/` directory is local validator tooling residue, not a product defect or milestone blocker."
     }
   ],
-  "rejectedObservations": [],
-  "previousRound": null
+  "nonBlockingObservations": [
+    {
+      "area": "lint",
+      "observation": "`packages/core/platform/auth-initializer.tsx:51` still reports an existing `react-hooks/exhaustive-deps` warning, but it did not fail lint and does not block milestone closure."
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "review",
+      "path": ".factory/validation/provider-runtime/scrutiny/reviews/droid-provider-runtime-backend-plumbing.json"
+    },
+    {
+      "kind": "review",
+      "path": ".factory/validation/provider-runtime/scrutiny/reviews/droid-runtime-ui-and-agent-binding-surfaces.json"
+    },
+    {
+      "kind": "review",
+      "path": ".factory/validation/provider-runtime/scrutiny/reviews/provider-runtime-browser-auth-and-daemon-bootstrap.json"
+    },
+    {
+      "kind": "browser-evidence",
+      "path": ".factory/validation/provider-runtime/user-testing/screenshots/offline-transcript-droid.png"
+    }
+  ],
+  "summary": "Provider-runtime passed on rerun. Automated validators all succeeded, Droid home isolation is no longer coupled to Codex state, offline runtime detail and transcript surfaces retain Droid attribution, and the remaining `.playwright-cli/` residue is explicitly non-product."
 }

@@ -13,7 +13,7 @@ import {
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
 import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
-import { canAssignAgent } from "@multica/views/issues/components";
+import { filterAssignableAgents } from "@multica/views/issues/components";
 import { api } from "@multica/core/api";
 import {
   chatSessionsOptions,
@@ -75,9 +75,7 @@ export function ChatWindow() {
 
   const currentMember = members.find((m) => m.user_id === user?.id);
   const memberRole = currentMember?.role;
-  const availableAgents = agents.filter(
-    (a) => !a.archived_at && canAssignAgent(a, user?.id, memberRole),
-  );
+  const availableAgents = filterAssignableAgents(agents, user?.id, memberRole);
 
   // Resolve selected agent: stored preference → first available
   const selectedAgent =

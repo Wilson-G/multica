@@ -44,12 +44,13 @@ UPDATE comment SET
 WHERE id = $1
 RETURNING *;
 
--- name: HasAgentCommentedSince :one
+-- name: HasAgentCommentWithContentSince :one
 SELECT EXISTS (
     SELECT 1 FROM comment
     WHERE issue_id = @issue_id
       AND author_type = 'agent'
       AND author_id = @author_id
+      AND content = @content
       AND created_at >= @since
 ) AS commented;
 

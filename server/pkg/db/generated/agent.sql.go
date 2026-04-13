@@ -49,13 +49,18 @@ func (q *Queries) ArchiveAgent(ctx context.Context, arg ArchiveAgentParams) (Age
 
 const cancelAgentTask = `-- name: CancelAgentTask :one
 UPDATE agent_task_queue
-SET status = 'cancelled', completed_at = now()
+SET status = 'cancelled', completed_at = now(), result = $2
 WHERE id = $1 AND status IN ('queued', 'dispatched', 'running')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id
 `
 
-func (q *Queries) CancelAgentTask(ctx context.Context, id pgtype.UUID) (AgentTaskQueue, error) {
-	row := q.db.QueryRow(ctx, cancelAgentTask, id)
+type CancelAgentTaskParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Result []byte      `json:"result"`
+}
+
+func (q *Queries) CancelAgentTask(ctx context.Context, arg CancelAgentTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, cancelAgentTask, arg.ID, arg.Result)
 	var i AgentTaskQueue
 	err := row.Scan(
 		&i.ID,
@@ -316,18 +321,19 @@ func (q *Queries) CreateAgentTask(ctx context.Context, arg CreateAgentTaskParams
 
 const failAgentTask = `-- name: FailAgentTask :one
 UPDATE agent_task_queue
-SET status = 'failed', completed_at = now(), error = $2
+SET status = 'failed', completed_at = now(), error = $2, result = $3
 WHERE id = $1 AND status IN ('dispatched', 'running')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id
 `
 
 type FailAgentTaskParams struct {
-	ID    pgtype.UUID `json:"id"`
-	Error pgtype.Text `json:"error"`
+	ID     pgtype.UUID `json:"id"`
+	Error  pgtype.Text `json:"error"`
+	Result []byte      `json:"result"`
 }
 
 func (q *Queries) FailAgentTask(ctx context.Context, arg FailAgentTaskParams) (AgentTaskQueue, error) {
-	row := q.db.QueryRow(ctx, failAgentTask, arg.ID, arg.Error)
+	row := q.db.QueryRow(ctx, failAgentTask, arg.ID, arg.Error, arg.Result)
 	var i AgentTaskQueue
 	err := row.Scan(
 		&i.ID,

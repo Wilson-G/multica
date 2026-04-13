@@ -23,6 +23,10 @@ export function canAssignAgent(agent: Agent, userId: string | undefined, memberR
   return false;
 }
 
+export function filterAssignableAgents(agents: Agent[], userId: string | undefined, memberRole: string | undefined): Agent[] {
+  return agents.filter((agent) => !agent.archived_at && canAssignAgent(agent, userId, memberRole));
+}
+
 export function AssigneePicker({
   assigneeType,
   assigneeId,
@@ -71,8 +75,11 @@ export function AssigneePicker({
   const filteredMembers = members
     .filter((m) => m.name.toLowerCase().includes(query))
     .sort((a, b) => getFreq("member", b.user_id) - getFreq("member", a.user_id));
-  const filteredAgents = agents
-    .filter((a) => !a.archived_at && a.name.toLowerCase().includes(query))
+  const filteredAgents = filterAssignableAgents(
+    agents.filter((a) => a.name.toLowerCase().includes(query)),
+    user?.id,
+    memberRole,
+  )
     .sort((a, b) => getFreq("agent", b.id) - getFreq("agent", a.id));
 
   const isSelected = (type: string, id: string) =>
@@ -144,30 +151,25 @@ export function AssigneePicker({
       {/* Agents */}
       {filteredAgents.length > 0 && (
         <PickerSection label="Agents">
-          {filteredAgents.map((a) => {
-            const allowed = canAssignAgent(a, user?.id, memberRole);
-            return (
-              <PickerItem
-                key={a.id}
-                selected={isSelected("agent", a.id)}
-                disabled={!allowed}
-                onClick={() => {
-                  if (!allowed) return;
-                  onUpdate({
-                    assignee_type: "agent",
-                    assignee_id: a.id,
-                  });
-                  setOpen(false);
-                }}
-              >
-                <ActorAvatar actorType="agent" actorId={a.id} size={18} />
-                <span className={allowed ? "" : "text-muted-foreground"}>{a.name}</span>
-                {a.visibility === "private" && (
-                  <Lock className="ml-auto h-3 w-3 text-muted-foreground" />
-                )}
-              </PickerItem>
-            );
-          })}
+          {filteredAgents.map((a) => (
+            <PickerItem
+              key={a.id}
+              selected={isSelected("agent", a.id)}
+              onClick={() => {
+                onUpdate({
+                  assignee_type: "agent",
+                  assignee_id: a.id,
+                });
+                setOpen(false);
+              }}
+            >
+              <ActorAvatar actorType="agent" actorId={a.id} size={18} />
+              <span>{a.name}</span>
+              {a.visibility === "private" && (
+                <Lock className="ml-auto h-3 w-3 text-muted-foreground" />
+              )}
+            </PickerItem>
+          ))}
         </PickerSection>
       )}
 

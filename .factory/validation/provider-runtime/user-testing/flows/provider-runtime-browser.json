@@ -1,0 +1,60 @@
+{
+  "milestone": "provider-runtime",
+  "flowId": "provider-runtime-browser",
+  "validatedAt": "2026-04-13T05:07:13Z",
+  "browserSession": "mission4681c",
+  "workspaceId": "9cf6d3b6-8354-48ff-823c-979e3cae12da",
+  "bootstrap": {
+    "storageKeys": [
+      "multica_token",
+      "multica_workspace_id",
+      "multica_navigation"
+    ],
+    "daemonStatus": "running"
+  },
+  "runtime": {
+    "runtimeId": "509c42c4-b0af-401f-97c1-9e2d51359a79",
+    "provider": "droid"
+  },
+  "createdAgent": {
+    "agentId": "ca07572d-01d0-456c-994e-750204055258",
+    "name": "Mission Closure Droid 1215"
+  },
+  "historicalTranscript": {
+    "issueId": "938a29a6-d768-49f2-a6be-e0f28f0c2a0d",
+    "evidence": "offline-transcript-droid.png"
+  },
+  "steps": [
+    {
+      "step": "Open runtime list and runtime detail",
+      "observed": "A live runtime appears with provider `droid`, its own label, and a dedicated runtime detail surface.",
+      "evidence": [
+        "screenshots/runtime-list.png",
+        "screenshots/runtime-detail.png"
+      ]
+    },
+    {
+      "step": "Create a Droid-backed agent from the runtime picker",
+      "observed": "The create-agent picker shows a visible Droid runtime option and agent creation succeeds against the selected runtime.",
+      "evidence": [
+        "screenshots/runtime-picker-droid.png",
+        "screenshots/created-agent-list.png"
+      ]
+    },
+    {
+      "step": "Reload agent detail and settings",
+      "observed": "The created agent keeps the same runtime binding and visible Droid provider attribution across agent detail and settings surfaces.",
+      "evidence": [
+        "screenshots/agent-detail-droid.png",
+        "screenshots/agent-settings-droid.png"
+      ]
+    },
+    {
+      "step": "Inspect historical offline transcript",
+      "observed": "A historical issue transcript still shows Droid provider attribution after runtime liveness changes.",
+      "evidence": [
+        "screenshots/offline-transcript-droid.png"
+      ]
+    }
+  ]
+}

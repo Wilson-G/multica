@@ -68,24 +68,25 @@ func TestListTimeline_MergedAndSorted(t *testing.T) {
 
 	var timeline []TimelineEntry
 	json.NewDecoder(w.Body).Decode(&timeline)
-	if len(timeline) != 2 {
-		t.Fatalf("expected 2 timeline entries, got %d", len(timeline))
+	if len(timeline) < 3 {
+		t.Fatalf("expected at least 3 timeline entries with automatic issue activity, got %d", len(timeline))
 	}
 
-	// First entry should be the activity (created earlier)
-	if timeline[0].Type != "activity" {
-		t.Fatalf("expected first entry type 'activity', got %q", timeline[0].Type)
+	foundCreated := false
+	foundComment := false
+	for _, entry := range timeline {
+		if entry.Type == "activity" && entry.Action != nil && *entry.Action == "created" {
+			foundCreated = true
+		}
+		if entry.Type == "comment" && entry.Content != nil && *entry.Content == "Timeline test comment" {
+			foundComment = true
+		}
 	}
-	if *timeline[0].Action != "created" {
-		t.Fatalf("expected action 'created', got %q", *timeline[0].Action)
+	if !foundCreated {
+		t.Fatal("expected a created activity in timeline")
 	}
-
-	// Second entry should be the comment
-	if timeline[1].Type != "comment" {
-		t.Fatalf("expected second entry type 'comment', got %q", timeline[1].Type)
-	}
-	if *timeline[1].Content != "Timeline test comment" {
-		t.Fatalf("expected comment content 'Timeline test comment', got %q", *timeline[1].Content)
+	if !foundComment {
+		t.Fatal("expected the created comment in timeline")
 	}
 }
 
@@ -138,13 +139,31 @@ func TestListTimeline_ChronologicalOrder(t *testing.T) {
 
 	var timeline []TimelineEntry
 	json.NewDecoder(w.Body).Decode(&timeline)
-	if len(timeline) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(timeline))
+	if len(timeline) < 3 {
+		t.Fatalf("expected at least 3 timeline entries with automatic issue activity, got %d", len(timeline))
 	}
 
-	// Entries should be in chronological order
-	if timeline[0].CreatedAt > timeline[1].CreatedAt {
-		t.Fatalf("timeline not in chronological order: %s > %s", timeline[0].CreatedAt, timeline[1].CreatedAt)
+	for i := 1; i < len(timeline); i++ {
+		if timeline[i-1].CreatedAt > timeline[i].CreatedAt {
+			t.Fatalf("timeline not in chronological order: %s > %s", timeline[i-1].CreatedAt, timeline[i].CreatedAt)
+		}
+	}
+
+	foundComment := false
+	foundStatus := false
+	for _, entry := range timeline {
+		if entry.Type == "comment" && entry.Content != nil && *entry.Content == "First comment" {
+			foundComment = true
+		}
+		if entry.Type == "activity" && entry.Action != nil && *entry.Action == "status_changed" {
+			foundStatus = true
+		}
+	}
+	if !foundComment {
+		t.Fatal("expected the comment in timeline")
+	}
+	if !foundStatus {
+		t.Fatal("expected the status activity in timeline")
 	}
 }
 
@@ -255,8 +274,8 @@ func TestCommentWithParentID_AppearsInTimeline(t *testing.T) {
 
 	var timeline []TimelineEntry
 	json.NewDecoder(w.Body).Decode(&timeline)
-	if len(timeline) != 2 {
-		t.Fatalf("expected 2 timeline entries, got %d", len(timeline))
+	if len(timeline) < 3 {
+		t.Fatalf("expected at least 3 timeline entries with automatic issue activity, got %d", len(timeline))
 	}
 
 	// Find the reply entry

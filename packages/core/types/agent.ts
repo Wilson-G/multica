@@ -27,6 +27,7 @@ export interface AgentTask {
   agent_id: string;
   runtime_id: string;
   issue_id: string;
+  workspace_id?: string;
   status: "queued" | "dispatched" | "running" | "completed" | "failed" | "cancelled";
   priority: number;
   dispatched_at: string | null;
@@ -35,6 +36,11 @@ export interface AgentTask {
   result: unknown;
   error: string | null;
   created_at: string;
+  prior_session_id?: string;
+  prior_work_dir?: string;
+  trigger_comment_id?: string;
+  chat_session_id?: string;
+  chat_message?: string;
 }
 
 export interface Agent {

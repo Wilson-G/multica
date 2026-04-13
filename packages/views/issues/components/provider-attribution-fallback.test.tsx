@@ -125,4 +125,53 @@ describe("provider attribution fallback", () => {
     expect(await screen.findByText("Droid")).toBeInTheDocument();
     expect(await screen.findByText("Runtime unavailable (Droid)")).toBeInTheDocument();
   });
+
+  it("renders blocked transcript fallback when no events were persisted", async () => {
+    mockGetAgent.mockResolvedValue(agent);
+    mockGetRuntime.mockRejectedValue(new Error("runtime offline"));
+
+    render(
+      <AgentTranscriptDialog
+        open
+        onOpenChange={vi.fn()}
+        task={{
+          ...task,
+          status: "failed",
+          error: "missing repo access",
+          result: {
+            state: "blocked",
+            message: "missing repo access",
+          },
+        }}
+        items={[]}
+        agentName="Droid Agent"
+      />,
+    );
+
+    expect(await screen.findAllByText("Blocked")).toHaveLength(2);
+    expect(await screen.findByText("missing repo access")).toBeInTheDocument();
+  });
+
+  it("renders completed output fallback when transcript events are absent", async () => {
+    mockGetAgent.mockResolvedValue(agent);
+    mockGetRuntime.mockRejectedValue(new Error("runtime offline"));
+
+    render(
+      <AgentTranscriptDialog
+        open
+        onOpenChange={vi.fn()}
+        task={{
+          ...task,
+          result: {
+            output: "Finished the Droid work",
+          },
+        }}
+        items={[]}
+        agentName="Droid Agent"
+      />,
+    );
+
+    expect(await screen.findAllByText("Completed")).toHaveLength(2);
+    expect(await screen.findByText("Finished the Droid work")).toBeInTheDocument();
+  });
 });
