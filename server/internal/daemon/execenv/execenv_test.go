@@ -618,7 +618,7 @@ func TestInjectRuntimeConfigDroidWritesAgentsFile(t *testing.T) {
 	}
 }
 
-func TestPrepareCodexHomeSeedsFromShared(t *testing.T) {
+func TestPrepareProviderHomeSeedsCodexFromShared(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv.
 
 	// Create a fake shared codex home.
@@ -632,8 +632,8 @@ func TestPrepareCodexHomeSeedsFromShared(t *testing.T) {
 	t.Setenv("CODEX_HOME", sharedHome)
 
 	codexHome := filepath.Join(t.TempDir(), "codex-home")
-	if err := prepareCodexHome(codexHome, testLogger()); err != nil {
-		t.Fatalf("prepareCodexHome failed: %v", err)
+	if err := prepareProviderHome("codex", codexHome, testLogger()); err != nil {
+		t.Fatalf("prepareProviderHome(codex) failed: %v", err)
 	}
 
 	// sessions should be a symlink to the shared sessions dir.
@@ -696,7 +696,43 @@ func TestPrepareCodexHomeSeedsFromShared(t *testing.T) {
 	}
 }
 
-func TestPrepareCodexHomeSkipsMissingFiles(t *testing.T) {
+func TestPrepareProviderHomeSeedsDroidFromDroidHome(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv.
+
+	sharedHome := t.TempDir()
+	os.WriteFile(filepath.Join(sharedHome, "auth.json"), []byte(`{"token":"droid-secret"}`), 0o644)
+	os.WriteFile(filepath.Join(sharedHome, "config.toml"), []byte(`provider = "droid"`), 0o644)
+
+	t.Setenv("DROID_HOME", sharedHome)
+
+	droidHome := filepath.Join(t.TempDir(), "droid-home")
+	if err := prepareProviderHome("droid", droidHome, testLogger()); err != nil {
+		t.Fatalf("prepareProviderHome(droid) failed: %v", err)
+	}
+
+	authPath := filepath.Join(droidHome, "auth.json")
+	fi, err := os.Lstat(authPath)
+	if err != nil {
+		t.Fatalf("auth.json not found: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("auth.json should be a symlink for droid home")
+	}
+	target, _ := os.Readlink(authPath)
+	if target != filepath.Join(sharedHome, "auth.json") {
+		t.Fatalf("auth.json symlink target = %q, want %q", target, filepath.Join(sharedHome, "auth.json"))
+	}
+
+	data, err := os.ReadFile(filepath.Join(droidHome, "config.toml"))
+	if err != nil {
+		t.Fatalf("read droid config.toml: %v", err)
+	}
+	if string(data) != `provider = "droid"` {
+		t.Fatalf("config.toml content = %q", data)
+	}
+}
+
+func TestPrepareProviderHomeSkipsMissingFiles(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv.
 
 	// Empty shared home — no files to seed.
@@ -704,8 +740,8 @@ func TestPrepareCodexHomeSkipsMissingFiles(t *testing.T) {
 	t.Setenv("CODEX_HOME", sharedHome)
 
 	codexHome := filepath.Join(t.TempDir(), "codex-home")
-	if err := prepareCodexHome(codexHome, testLogger()); err != nil {
-		t.Fatalf("prepareCodexHome failed: %v", err)
+	if err := prepareProviderHome("codex", codexHome, testLogger()); err != nil {
+		t.Fatalf("prepareProviderHome(codex) failed: %v", err)
 	}
 
 	// Directory should only contain the sessions symlink (no auth.json, no config.json, etc.).
@@ -728,6 +764,27 @@ func TestPrepareCodexHomeSkipsMissingFiles(t *testing.T) {
 	}
 	if fi.Mode()&os.ModeSymlink == 0 {
 		t.Error("sessions should be a symlink")
+	}
+}
+
+func TestPrepareSetsProviderSpecificHome(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	env, err := Prepare(PrepareParams{
+		WorkspacesRoot: root,
+		WorkspaceID:    "ws-1",
+		TaskID:         "task-12345678",
+		Provider:       "droid",
+		Task:           TaskContextForEnv{},
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("Prepare error: %v", err)
+	}
+
+	want := filepath.Join(env.RootDir, "droid-home")
+	if env.ProviderHome != want {
+		t.Fatalf("ProviderHome = %q, want %q", env.ProviderHome, want)
 	}
 }
 

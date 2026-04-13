@@ -8,81 +8,95 @@ import (
 	"path/filepath"
 )
 
-// Directories to symlink from the shared ~/.codex/ into the per-task CODEX_HOME.
-// The shared directory is created if it doesn't exist, ensuring Codex session
-// logs are always written to the global home where users can find them.
-var codexSymlinkedDirs = []string{
+// Directories to symlink from the shared provider home into the per-task home.
+// The shared directory is created if it doesn't exist, ensuring session logs
+// are always written to the global home where users can find them.
+var providerSymlinkedDirs = []string{
 	"sessions",
 }
 
-// Files to symlink from the shared ~/.codex/ into the per-task CODEX_HOME.
+// Files to symlink from the shared provider home into the per-task home.
 // Symlinks share state (e.g. auth tokens) so changes propagate automatically.
-var codexSymlinkedFiles = []string{
+var providerSymlinkedFiles = []string{
 	"auth.json",
 }
 
-// Files to copy from the shared ~/.codex/ into the per-task CODEX_HOME.
+// Files to copy from the shared provider home into the per-task home.
 // Copies are isolated — changes don't affect the shared home.
-var codexCopiedFiles = []string{
+var providerCopiedFiles = []string{
 	"config.json",
 	"config.toml",
 	"instructions.md",
 }
 
-// prepareCodexHome creates a per-task CODEX_HOME directory and seeds it with
-// config from the shared ~/.codex/ home. Auth is symlinked (shared), config
-// files are copied (isolated).
-func prepareCodexHome(codexHome string, logger *slog.Logger) error {
-	sharedHome := resolveSharedCodexHome()
+// prepareProviderHome creates a per-task provider home directory and seeds it
+// with config from the shared provider home. Auth is symlinked (shared),
+// config files are copied (isolated).
+func prepareProviderHome(provider, providerHome string, logger *slog.Logger) error {
+	sharedHome := resolveSharedProviderHome(provider)
 
-	if err := os.MkdirAll(codexHome, 0o755); err != nil {
-		return fmt.Errorf("create codex-home dir: %w", err)
+	if err := os.MkdirAll(providerHome, 0o755); err != nil {
+		return fmt.Errorf("create provider home dir: %w", err)
 	}
 
 	// Symlink shared directories (sessions) so logs stay in the global home.
-	for _, name := range codexSymlinkedDirs {
+	for _, name := range providerSymlinkedDirs {
 		src := filepath.Join(sharedHome, name)
-		dst := filepath.Join(codexHome, name)
+		dst := filepath.Join(providerHome, name)
 		if err := ensureDirSymlink(src, dst); err != nil {
-			logger.Warn("execenv: codex-home dir symlink failed", "dir", name, "error", err)
+			logger.Warn("execenv: provider-home dir symlink failed", "provider", provider, "dir", name, "error", err)
 		}
 	}
 
 	// Symlink shared files (auth).
-	for _, name := range codexSymlinkedFiles {
+	for _, name := range providerSymlinkedFiles {
 		src := filepath.Join(sharedHome, name)
-		dst := filepath.Join(codexHome, name)
+		dst := filepath.Join(providerHome, name)
 		if err := ensureSymlink(src, dst); err != nil {
-			logger.Warn("execenv: codex-home symlink failed", "file", name, "error", err)
+			logger.Warn("execenv: provider-home symlink failed", "provider", provider, "file", name, "error", err)
 		}
 	}
 
 	// Copy config files (isolated per task).
-	for _, name := range codexCopiedFiles {
+	for _, name := range providerCopiedFiles {
 		src := filepath.Join(sharedHome, name)
-		dst := filepath.Join(codexHome, name)
+		dst := filepath.Join(providerHome, name)
 		if err := copyFileIfExists(src, dst); err != nil {
-			logger.Warn("execenv: codex-home copy failed", "file", name, "error", err)
+			logger.Warn("execenv: provider-home copy failed", "provider", provider, "file", name, "error", err)
 		}
 	}
 
 	return nil
 }
 
-// resolveSharedCodexHome returns the path to the user's shared Codex home.
-// Checks $CODEX_HOME first, falls back to ~/.codex.
-func resolveSharedCodexHome() string {
-	if v := os.Getenv("CODEX_HOME"); v != "" {
-		abs, err := filepath.Abs(v)
-		if err == nil {
-			return abs
+// resolveSharedProviderHome returns the path to the user's shared provider home.
+// Checks the provider-specific env var first, then falls back to the default
+// hidden directory under the user's home.
+func resolveSharedProviderHome(provider string) string {
+	if envName := providerHomeEnvVar(provider); envName != "" {
+		if v := os.Getenv(envName); v != "" {
+			abs, err := filepath.Abs(v)
+			if err == nil {
+				return abs
+			}
 		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join("/tmp", ".codex") // last resort fallback
+		return filepath.Join("/tmp", "."+provider) // last resort fallback
 	}
-	return filepath.Join(home, ".codex")
+	return filepath.Join(home, "."+provider)
+}
+
+func providerHomeEnvVar(provider string) string {
+	switch provider {
+	case "codex":
+		return "CODEX_HOME"
+	case "droid":
+		return "DROID_HOME"
+	default:
+		return ""
+	}
 }
 
 // ensureDirSymlink creates a symlink dst → src for a directory.

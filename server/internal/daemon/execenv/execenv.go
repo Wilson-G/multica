@@ -18,11 +18,11 @@ type RepoContextForEnv struct {
 
 // PrepareParams holds all inputs needed to set up an execution environment.
 type PrepareParams struct {
-	WorkspacesRoot string           // base path for all envs (e.g., ~/multica_workspaces)
-	WorkspaceID    string           // workspace UUID — tasks are grouped under this
-	TaskID         string           // task UUID — used for directory name
-	AgentName      string           // for git branch naming only
-	Provider       string           // agent provider ("claude", "codex", "droid", etc.) — determines skill injection paths
+	WorkspacesRoot string            // base path for all envs (e.g., ~/multica_workspaces)
+	WorkspaceID    string            // workspace UUID — tasks are grouped under this
+	TaskID         string            // task UUID — used for directory name
+	AgentName      string            // for git branch naming only
+	Provider       string            // agent provider ("claude", "codex", "droid", etc.) — determines skill injection paths
 	Task           TaskContextForEnv // context data for writing files
 }
 
@@ -56,8 +56,9 @@ type Environment struct {
 	RootDir string
 	// WorkDir is the directory to pass as Cwd to the agent ({RootDir}/workdir/).
 	WorkDir string
-	// CodexHome is the path to the per-task provider home directory used by Codex-compatible providers.
-	CodexHome string
+	// ProviderHome is the path to the per-task provider home directory used by
+	// Codex-compatible providers.
+	ProviderHome string
 
 	logger *slog.Logger // for cleanup logging
 }
@@ -104,19 +105,19 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		return nil, fmt.Errorf("execenv: write context files: %w", err)
 	}
 
-	// For Codex-compatible providers, set up a per-task home seeded from the
-	// shared home with skills.
+	// For Codex-compatible providers, set up a per-task provider home seeded
+	// from the provider's shared home with skills.
 	if params.Provider == "codex" || params.Provider == "droid" {
-		codexHome := filepath.Join(envRoot, "codex-home")
-		if err := prepareCodexHome(codexHome, logger); err != nil {
-			return nil, fmt.Errorf("execenv: prepare codex-home: %w", err)
+		providerHome := filepath.Join(envRoot, params.Provider+"-home")
+		if err := prepareProviderHome(params.Provider, providerHome, logger); err != nil {
+			return nil, fmt.Errorf("execenv: prepare provider home: %w", err)
 		}
 		if len(params.Task.AgentSkills) > 0 {
-			if err := writeSkillFiles(filepath.Join(codexHome, "skills"), params.Task.AgentSkills); err != nil {
-				return nil, fmt.Errorf("execenv: write codex skills: %w", err)
+			if err := writeSkillFiles(filepath.Join(providerHome, "skills"), params.Task.AgentSkills); err != nil {
+				return nil, fmt.Errorf("execenv: write provider skills: %w", err)
 			}
 		}
-		env.CodexHome = codexHome
+		env.ProviderHome = providerHome
 	}
 
 	logger.Info("execenv: prepared env", "root", envRoot, "repos_available", len(params.Task.Repos))
@@ -134,6 +135,10 @@ func Reuse(workDir, provider string, task TaskContextForEnv, logger *slog.Logger
 		RootDir: filepath.Dir(workDir),
 		WorkDir: workDir,
 		logger:  logger,
+	}
+
+	if provider == "codex" || provider == "droid" {
+		env.ProviderHome = filepath.Join(env.RootDir, provider+"-home")
 	}
 
 	// Refresh context files (issue_context.md, skills).

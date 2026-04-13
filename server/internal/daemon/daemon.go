@@ -951,10 +951,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 	}
 	// Point Codex-compatible providers to the per-task home so they discover
 	// skills natively without polluting shared config directories.
-	if env.CodexHome != "" {
-		agentEnv["CODEX_HOME"] = env.CodexHome
+	if env.ProviderHome != "" {
 		if provider == "droid" {
-			agentEnv["DROID_HOME"] = env.CodexHome
+			agentEnv["DROID_HOME"] = env.ProviderHome
+		} else {
+			agentEnv["CODEX_HOME"] = env.ProviderHome
 		}
 	}
 	backend, err := agent.New(provider, agent.Config{
