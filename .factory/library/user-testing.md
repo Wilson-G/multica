@@ -27,7 +27,10 @@ Testing-surface guidance for mission validators and workers.
 ### Bootstrap / auth notes
 
 - Prefer reusing existing authenticated app state when available.
+- Recommended worktree bootstrap: `cd /Users/will/dev/multica && set -a && . ./.env.worktree && set +a && cd server && go run ./cmd/multica auth bootstrap-local --output json`.
+- The bootstrap command refreshes local auth against `http://localhost:18248`, ensures the `e2e-workspace` workspace, writes a local PAT plus watched workspace into CLI config for daemon restarts, and prints the browser `token` and `workspace_id`.
 - If browser login is required, follow the repo's existing test pattern from `e2e/helpers.ts`: create or reuse the default E2E user (`e2e@multica.ai`) and workspace (`e2e-workspace`) through the API helper path, then inject `multica_token` into localStorage before loading `/issues`.
+- When using the bootstrap command, inject the returned `token` into `multica_token` and the returned `workspace_id` into `multica_workspace_id` before loading `/issues`.
 - The bootstrap must also set `multica_workspace_id` to the ensured workspace id before navigating to `/issues`; otherwise authenticated browser sessions can bounce back to workspace selection or fail to hydrate dashboard routes reliably in the worktree app.
 - Do not rely on Docker-only fixtures for this mission.
 - Before runtime/agent/browser validation, restart the daemon from the repo CLI so the live daemon process includes the current branch's Droid provider support.

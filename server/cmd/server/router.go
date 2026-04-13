@@ -283,18 +283,15 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus) chi.Route
 			})
 
 			// Runtimes
-			r.Route("/api/runtimes", func(r chi.Router) {
-				r.Get("/", h.ListAgentRuntimes)
-				r.Route("/{runtimeId}", func(r chi.Router) {
-					r.Get("/usage", h.GetRuntimeUsage)
-					r.Get("/activity", h.GetRuntimeTaskActivity)
-					r.Post("/ping", h.InitiatePing)
-					r.Get("/ping/{pingId}", h.GetPing)
-					r.Post("/update", h.InitiateUpdate)
-					r.Get("/update/{updateId}", h.GetUpdate)
-					r.Delete("/", h.DeleteAgentRuntime)
-				})
-			})
+			r.Get("/api/runtimes", h.ListAgentRuntimes)
+			r.Get("/api/runtimes/{runtimeId}", h.GetAgentRuntime)
+			r.Get("/api/runtimes/{runtimeId}/usage", h.GetRuntimeUsage)
+			r.Get("/api/runtimes/{runtimeId}/activity", h.GetRuntimeTaskActivity)
+			r.Post("/api/runtimes/{runtimeId}/ping", h.InitiatePing)
+			r.Get("/api/runtimes/{runtimeId}/ping/{pingId}", h.GetPing)
+			r.Post("/api/runtimes/{runtimeId}/update", h.InitiateUpdate)
+			r.Get("/api/runtimes/{runtimeId}/update/{updateId}", h.GetUpdate)
+			r.Delete("/api/runtimes/{runtimeId}", h.DeleteAgentRuntime)
 
 			// Tasks (user-facing, with ownership check)
 			r.Post("/api/tasks/{taskId}/cancel", h.CancelTaskByUser)
@@ -307,6 +304,7 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus) chi.Route
 					r.Delete("/", h.ArchiveChatSession)
 					r.Post("/messages", h.SendChatMessage)
 					r.Get("/messages", h.ListChatMessages)
+					r.Get("/tasks", h.ListChatTasks)
 				})
 			})
 

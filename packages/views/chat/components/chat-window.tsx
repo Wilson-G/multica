@@ -19,6 +19,7 @@ import {
   chatSessionsOptions,
   allChatSessionsOptions,
   chatMessagesOptions,
+  chatTasksOptions,
   chatKeys,
 } from "@multica/core/chat/queries";
 import { useCreateChatSession } from "@multica/core/chat/mutations";
@@ -28,6 +29,8 @@ import { ChatInput } from "./chat-input";
 import { ChatSessionHistory } from "./chat-session-history";
 import { useWS } from "@multica/core/realtime";
 import type { TaskMessagePayload, ChatDonePayload, Agent, ChatMessage } from "@multica/core/types";
+import { toast } from "sonner";
+import { getActiveChatTask, resolveChatDisplayAgent } from "./chat-state";
 
 export function ChatWindow() {
   const wsId = useWorkspaceId();
@@ -55,12 +58,15 @@ export function ChatWindow() {
   const { data: rawMessages } = useQuery(
     chatMessagesOptions(activeSessionId ?? ""),
   );
+  const { data: sessionTasks = [] } = useQuery(
+    chatTasksOptions(activeSessionId ?? ""),
+  );
   // When no active session, always show empty — don't use stale cache
   const messages = activeSessionId ? rawMessages ?? [] : [];
 
   // Check if current session is archived
   const currentSession = activeSessionId
-    ? allSessions.find((s) => s.id === activeSessionId)
+    ? allSessions.find((s) => s.id === activeSessionId) ?? null
     : null;
   const isSessionArchived = currentSession?.status === "archived";
 
@@ -74,10 +80,22 @@ export function ChatWindow() {
   );
 
   // Resolve selected agent: stored preference → first available
-  const activeAgent =
+  const selectedAgent =
     availableAgents.find((a) => a.id === selectedAgentId) ??
     availableAgents[0] ??
     null;
+  const displayAgent = resolveChatDisplayAgent(
+    currentSession,
+    agents,
+    selectedAgent,
+  );
+  const isDisplayAgentArchived = !!displayAgent?.archived_at;
+  const inputDisabledPlaceholder = isSessionArchived
+    ? "This session is archived"
+    : isDisplayAgentArchived
+      ? "This agent is archived"
+      : undefined;
+  const taskMap = new Map(sessionTasks.map((task) => [task.id, task]));
 
   // Auto-restore most recent active session from server (only once on mount)
   const didRestoreRef = useRef(false);
@@ -92,6 +110,45 @@ export function ChatWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when sessions load
   }, [sessions]);
 
+  useEffect(() => {
+    if (!activeSessionId || pendingTaskId) return;
+
+    const activeTask = getActiveChatTask(sessionTasks);
+    if (!activeTask) return;
+
+    let cancelled = false;
+    setPendingTask(activeTask.id);
+    api.listTaskMessages(activeTask.id).then((taskMessages) => {
+      if (cancelled) return;
+      clearTimeline();
+      for (const message of taskMessages) {
+        addTimelineItem({
+          seq: message.seq,
+          type: message.type,
+          tool: message.tool,
+          content: message.content,
+          input: message.input,
+          output: message.output,
+        });
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        clearTimeline();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSessionId,
+    pendingTaskId,
+    sessionTasks,
+    setPendingTask,
+    clearTimeline,
+    addTimelineItem,
+  ]);
+
   // Use ref for pendingTaskId so WS handlers always see the latest value
   // without needing to re-subscribe on every change.
   const pendingTaskRef = useRef<string | null>(pendingTaskId);
@@ -100,15 +157,16 @@ export function ChatWindow() {
   const { subscribe } = useWS();
 
   useEffect(() => {
-    // Returns true if the event was for our pending task and was handled.
-    // Caller still decides whether to invalidate cache (chat:done / completed do; failed doesn't).
     const matchesPending = (taskId: string) =>
       !!pendingTaskRef.current && taskId === pendingTaskRef.current;
 
-    const finalizePending = (invalidateCache: boolean) => {
-      if (invalidateCache) {
-        const sid = useChatStore.getState().activeSessionId;
-        if (sid) {
+    const finalizePending = (invalidateMessages: boolean) => {
+      const sid = useChatStore.getState().activeSessionId;
+      if (sid) {
+        qc.invalidateQueries({ queryKey: chatKeys.tasks(sid) });
+        qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+        qc.invalidateQueries({ queryKey: chatKeys.allSessions(wsId) });
+        if (invalidateMessages) {
           qc.invalidateQueries({ queryKey: chatKeys.messages(sid) });
         }
       }
@@ -147,54 +205,85 @@ export function ChatWindow() {
       finalizePending(false);
     });
 
+    const unsubCancelled = subscribe("task:cancelled", (payload) => {
+      const p = payload as { task_id: string };
+      if (!matchesPending(p.task_id)) return;
+      finalizePending(false);
+    });
+
     return () => {
       unsubMessage();
       unsubDone();
       unsubCompleted();
       unsubFailed();
+      unsubCancelled();
     };
-  }, [subscribe, addTimelineItem, clearTimeline, setPendingTask, qc]);
+  }, [subscribe, addTimelineItem, clearTimeline, setPendingTask, qc, wsId]);
 
   const handleSend = useCallback(
     async (content: string) => {
-      if (!activeAgent) return;
+      if (!selectedAgent) return;
 
       let sessionId = activeSessionId;
+      let createdSessionId: string | null = null;
+      const optimisticId = `optimistic-${Date.now()}`;
 
-      if (!sessionId) {
-        const session = await createSession.mutateAsync({
-          agent_id: activeAgent.id,
-          title: content.slice(0, 50),
-        });
-        sessionId = session.id;
-        setActiveSession(sessionId);
+      try {
+        if (!sessionId) {
+          const session = await createSession.mutateAsync({
+            agent_id: selectedAgent.id,
+            title: content.slice(0, 50),
+          });
+          sessionId = session.id;
+          createdSessionId = session.id;
+          setActiveSession(sessionId);
+        }
+
+        const optimistic: ChatMessage = {
+          id: optimisticId,
+          chat_session_id: sessionId,
+          role: "user",
+          content,
+          task_id: null,
+          created_at: new Date().toISOString(),
+        };
+        qc.setQueryData<ChatMessage[]>(
+          chatKeys.messages(sessionId),
+          (old) => (old ? [...old, optimistic] : [optimistic]),
+        );
+
+        const result = await api.sendChatMessage(sessionId, content);
+        setPendingTask(result.task_id);
+        qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
+        qc.invalidateQueries({ queryKey: chatKeys.tasks(sessionId) });
+        qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+        qc.invalidateQueries({ queryKey: chatKeys.allSessions(wsId) });
+      } catch (error) {
+        if (sessionId) {
+          qc.setQueryData<ChatMessage[]>(
+            chatKeys.messages(sessionId),
+            (old) => old?.filter((message) => message.id !== optimisticId) ?? [],
+          );
+          qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
+          qc.invalidateQueries({ queryKey: chatKeys.tasks(sessionId) });
+        }
+        if (createdSessionId) {
+          qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+          qc.invalidateQueries({ queryKey: chatKeys.allSessions(wsId) });
+        }
+        toast.error(
+          error instanceof Error ? error.message : "Failed to send message",
+        );
       }
-
-      // Optimistic: show user message immediately.
-      const optimistic: ChatMessage = {
-        id: `optimistic-${Date.now()}`,
-        chat_session_id: sessionId,
-        role: "user",
-        content,
-        task_id: null,
-        created_at: new Date().toISOString(),
-      };
-      qc.setQueryData<ChatMessage[]>(
-        chatKeys.messages(sessionId),
-        (old) => (old ? [...old, optimistic] : [optimistic]),
-      );
-
-      const result = await api.sendChatMessage(sessionId, content);
-      setPendingTask(result.task_id);
-      qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
     },
     [
       activeSessionId,
-      activeAgent,
+      selectedAgent,
       createSession,
       setActiveSession,
       setPendingTask,
       qc,
+      wsId,
     ],
   );
 
@@ -207,6 +296,7 @@ export function ChatWindow() {
     }
     if (activeSessionId) {
       qc.invalidateQueries({ queryKey: chatKeys.messages(activeSessionId) });
+      qc.invalidateQueries({ queryKey: chatKeys.tasks(activeSessionId) });
     }
     clearTimeline();
     setPendingTask(null);
@@ -236,7 +326,7 @@ export function ChatWindow() {
         <div className="flex items-center justify-between border-b px-4 py-2.5">
           <AgentSelector
             agents={availableAgents}
-            activeAgent={activeAgent}
+            activeAgent={displayAgent}
             onSelect={handleSelectAgent}
           />
           <div className="flex items-center gap-0.5">
@@ -284,12 +374,13 @@ export function ChatWindow() {
           {hasMessages ? (
             <ChatMessageList
               messages={messages}
-              agent={activeAgent}
+              agent={displayAgent}
               timelineItems={timelineItems}
               isWaiting={!!pendingTaskId}
+              tasksById={taskMap}
             />
           ) : (
-            <EmptyState agentName={activeAgent?.name} />
+            <EmptyState agentName={displayAgent?.name} />
           )}
 
           {/* Input — disabled for archived sessions */}
@@ -297,7 +388,8 @@ export function ChatWindow() {
             onSend={handleSend}
             onStop={handleStop}
             isRunning={!!pendingTaskId}
-            disabled={isSessionArchived}
+            disabled={!!inputDisabledPlaceholder}
+            disabledPlaceholder={inputDisabledPlaceholder}
           />
         </>
       )}

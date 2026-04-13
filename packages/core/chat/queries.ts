@@ -14,6 +14,7 @@ export const chatKeys = {
   allSessions: (wsId: string) => [...chatKeys.all(wsId), "sessions", "all"] as const,
   session: (wsId: string, id: string) => [...chatKeys.all(wsId), "session", id] as const,
   messages: (sessionId: string) => ["chat", "messages", sessionId] as const,
+  tasks: (sessionId: string) => ["chat", "tasks", sessionId] as const,
 };
 
 export function chatSessionsOptions(wsId: string) {
@@ -45,6 +46,15 @@ export function chatMessagesOptions(sessionId: string) {
   return queryOptions({
     queryKey: chatKeys.messages(sessionId),
     queryFn: () => api.listChatMessages(sessionId),
+    enabled: !!sessionId,
+    staleTime: Infinity,
+  });
+}
+
+export function chatTasksOptions(sessionId: string) {
+  return queryOptions({
+    queryKey: chatKeys.tasks(sessionId),
+    queryFn: () => api.listChatTasks(sessionId),
     enabled: !!sessionId,
     staleTime: Infinity,
   });

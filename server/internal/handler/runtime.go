@@ -145,7 +145,7 @@ func (h *Handler) GetRuntimeUsage(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Queries.ListRuntimeUsage(r.Context(), db.ListRuntimeUsageParams{
 		RuntimeID: parseUUID(runtimeID),
-		Since:     since,
+		Date:      since,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list usage")
@@ -322,6 +322,21 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) GetAgentRuntime(w http.ResponseWriter, r *http.Request) {
+	runtimeID := chi.URLParam(r, "runtimeId")
+	rt, err := h.Queries.GetAgentRuntime(r.Context(), parseUUID(runtimeID))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "runtime not found")
+		return
+	}
+
+	if _, ok := h.requireWorkspaceMember(w, r, uuidToString(rt.WorkspaceID), "runtime not found"); !ok {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, runtimeToResponse(rt))
 }
 
 // DeleteAgentRuntime deletes a runtime after permission and dependency checks.

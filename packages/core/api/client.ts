@@ -385,6 +385,10 @@ export class ApiClient {
     return this.fetch(`/api/runtimes?${search}`);
   }
 
+  async getRuntime(runtimeId: string): Promise<AgentRuntime> {
+    return this.fetch(`/api/runtimes/${runtimeId}`);
+  }
+
   async deleteRuntime(runtimeId: string): Promise<void> {
     await this.fetch(`/api/runtimes/${runtimeId}`, { method: "DELETE" });
   }
@@ -656,6 +660,10 @@ export class ApiClient {
 
   async listChatMessages(sessionId: string): Promise<ChatMessage[]> {
     return this.fetch(`/api/chat/sessions/${sessionId}/messages`);
+  }
+
+  async listChatTasks(sessionId: string): Promise<AgentTask[]> {
+    return this.fetch(`/api/chat/sessions/${sessionId}/tasks`);
   }
 
   async sendChatMessage(sessionId: string, content: string): Promise<SendChatMessageResponse> {

@@ -183,10 +183,8 @@ export function AgentTranscriptDialog({
     }
 
     if (task.runtime_id) {
-      api.listRuntimes().then((runtimes) => {
-        if (cancelled) return;
-        const rt = runtimes.find((r) => r.id === task.runtime_id);
-        if (rt) setRuntimeInfo(rt);
+      api.getRuntime(task.runtime_id).then((runtime) => {
+        if (!cancelled) setRuntimeInfo(runtime);
       }).catch(() => {});
     }
 

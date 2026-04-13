@@ -43,6 +43,11 @@ INSERT INTO chat_message (chat_session_id, role, content, task_id)
 VALUES ($1, $2, $3, sqlc.narg(task_id))
 RETURNING *;
 
+-- name: UpdateChatMessageTask :exec
+UPDATE chat_message
+SET task_id = $2
+WHERE id = $1;
+
 -- name: ListChatMessages :many
 SELECT * FROM chat_message
 WHERE chat_session_id = $1
@@ -56,6 +61,11 @@ WHERE id = $1;
 INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, chat_session_id)
 VALUES ($1, $2, NULL, 'queued', $3, $4)
 RETURNING *;
+
+-- name: ListTasksByChatSession :many
+SELECT * FROM agent_task_queue
+WHERE chat_session_id = $1
+ORDER BY created_at DESC;
 
 -- name: GetLastChatTaskSession :one
 SELECT session_id, work_dir FROM agent_task_queue

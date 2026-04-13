@@ -39,6 +39,13 @@ var authStatusCmd = &cobra.Command{
 	RunE:  runAuthStatus,
 }
 
+var authBootstrapLocalCmd = &cobra.Command{
+	Use:   "bootstrap-local",
+	Short: "Bootstrap local worktree auth and daemon config",
+	Long:  "Create a local validation session for the current worktree backend, ensure a watched workspace, and print browser bootstrap data for /issues.",
+	RunE:  runAuthBootstrapLocal,
+}
+
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Remove stored authentication token",
@@ -47,9 +54,32 @@ var authLogoutCmd = &cobra.Command{
 
 func init() {
 	authLoginCmd.Flags().Bool("token", false, "Authenticate by pasting a personal access token")
+	authBootstrapLocalCmd.Flags().String("email", "e2e@multica.ai", "Email address to bootstrap locally")
+	authBootstrapLocalCmd.Flags().String("workspace-name", "E2E Workspace", "Workspace name to ensure locally")
+	authBootstrapLocalCmd.Flags().String("workspace-slug", "e2e-workspace", "Workspace slug to ensure locally")
+	authBootstrapLocalCmd.Flags().String("output", "text", "Output format: text or json")
 	authCmd.AddCommand(authLoginCmd)
+	authCmd.AddCommand(authBootstrapLocalCmd)
 	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authLogoutCmd)
+}
+
+const localBootstrapMasterCode = "888888"
+
+type bootstrapWorkspace struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type localBootstrapResponse struct {
+	APIURL        string `json:"api_url"`
+	AppURL        string `json:"app_url"`
+	Email         string `json:"email"`
+	Token         string `json:"token"`
+	WorkspaceID   string `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+	WorkspaceSlug string `json:"workspace_slug"`
 }
 
 func resolveToken(cmd *cobra.Command) string {
@@ -100,6 +130,141 @@ func runAuthLogin(cmd *cobra.Command, _ []string) error {
 		return runAuthLoginToken(cmd)
 	}
 	return runAuthLoginBrowser(cmd)
+}
+
+func runAuthBootstrapLocal(cmd *cobra.Command, _ []string) error {
+	serverURL := resolveServerURL(cmd)
+	if !isLocalServerURL(serverURL) {
+		return fmt.Errorf("bootstrap-local only supports localhost worktree backends, got %q", serverURL)
+	}
+
+	email := strings.ToLower(strings.TrimSpace(flagString(cmd, "email")))
+	if email == "" {
+		return fmt.Errorf("email is required")
+	}
+
+	workspaceName := strings.TrimSpace(flagString(cmd, "workspace-name"))
+	workspaceSlug := strings.ToLower(strings.TrimSpace(flagString(cmd, "workspace-slug")))
+	if workspaceName == "" || workspaceSlug == "" {
+		return fmt.Errorf("workspace-name and workspace-slug are required")
+	}
+
+	appURL := resolveAppURL(cmd)
+	anonClient := cli.NewAPIClient(serverURL, "", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	sendErr := anonClient.PostJSON(ctx, "/auth/send-code", map[string]string{
+		"email": email,
+	}, nil)
+	if sendErr != nil && strings.Contains(sendErr.Error(), "returned 429") {
+		time.Sleep(11 * time.Second)
+		sendErr = anonClient.PostJSON(ctx, "/auth/send-code", map[string]string{
+			"email": email,
+		}, nil)
+	}
+	if sendErr != nil {
+		return fmt.Errorf("send local verification code: %w", sendErr)
+	}
+
+	var loginResp struct {
+		Token string `json:"token"`
+		User  struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		} `json:"user"`
+	}
+	if err := anonClient.PostJSON(ctx, "/auth/verify-code", map[string]string{
+		"email": email,
+		"code":  localBootstrapMasterCode,
+	}, &loginResp); err != nil {
+		return fmt.Errorf("verify local bootstrap code: %w", err)
+	}
+
+	jwtClient := cli.NewAPIClient(serverURL, "", loginResp.Token)
+	workspace, err := ensureBootstrapWorkspace(ctx, jwtClient, workspaceName, workspaceSlug)
+	if err != nil {
+		return err
+	}
+
+	var patResp struct {
+		Token string `json:"token"`
+	}
+	if err := jwtClient.PostJSON(ctx, "/api/tokens", map[string]any{
+		"name":            "CLI (local bootstrap)",
+		"expires_in_days": 90,
+	}, &patResp); err != nil {
+		return fmt.Errorf("create local access token: %w", err)
+	}
+
+	profile := resolveProfile(cmd)
+	cfg, _ := cli.LoadCLIConfigForProfile(profile)
+	cfg.ServerURL = serverURL
+	cfg.AppURL = appURL
+	cfg.Token = patResp.Token
+	cfg.WorkspaceID = workspace.ID
+	cfg.WatchedWorkspaces = []cli.WatchedWorkspace{{
+		ID:   workspace.ID,
+		Name: workspace.Name,
+	}}
+	if err := cli.SaveCLIConfigForProfile(cfg, profile); err != nil {
+		return fmt.Errorf("save local bootstrap config: %w", err)
+	}
+
+	resp := localBootstrapResponse{
+		APIURL:        serverURL,
+		AppURL:        appURL,
+		Email:         email,
+		Token:         loginResp.Token,
+		WorkspaceID:   workspace.ID,
+		WorkspaceName: workspace.Name,
+		WorkspaceSlug: workspace.Slug,
+	}
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "json" {
+		return cli.PrintJSON(os.Stdout, resp)
+	}
+
+	fmt.Fprintf(os.Stdout, "Local auth bootstrapped for %s\n", email)
+	fmt.Fprintf(os.Stdout, "Workspace: %s (%s)\n", workspace.Name, workspace.ID)
+	fmt.Fprintf(os.Stdout, "Browser localStorage:\n")
+	fmt.Fprintf(os.Stdout, "  multica_token=%s\n", resp.Token)
+	fmt.Fprintf(os.Stdout, "  multica_workspace_id=%s\n", resp.WorkspaceID)
+	fmt.Fprintf(os.Stdout, "CLI config updated for daemon start against %s\n", serverURL)
+	return nil
+}
+
+func ensureBootstrapWorkspace(ctx context.Context, client *cli.APIClient, workspaceName, workspaceSlug string) (bootstrapWorkspace, error) {
+	var workspaces []bootstrapWorkspace
+	if err := client.GetJSON(ctx, "/api/workspaces", &workspaces); err != nil {
+		return bootstrapWorkspace{}, fmt.Errorf("list local workspaces: %w", err)
+	}
+
+	for _, workspace := range workspaces {
+		if workspace.Slug == workspaceSlug {
+			return workspace, nil
+		}
+	}
+
+	var created bootstrapWorkspace
+	if err := client.PostJSON(ctx, "/api/workspaces", map[string]string{
+		"name": workspaceName,
+		"slug": workspaceSlug,
+	}, &created); err != nil {
+		return bootstrapWorkspace{}, fmt.Errorf("create bootstrap workspace: %w", err)
+	}
+	return created, nil
+}
+
+func isLocalServerURL(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func runAuthLoginBrowser(cmd *cobra.Command) error {

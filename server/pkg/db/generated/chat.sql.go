@@ -338,6 +338,50 @@ func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSes
 	return items, nil
 }
 
+const listTasksByChatSession = `-- name: ListTasksByChatSession :many
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id FROM agent_task_queue
+WHERE chat_session_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListTasksByChatSession(ctx context.Context, chatSessionID pgtype.UUID) ([]AgentTaskQueue, error) {
+	rows, err := q.db.Query(ctx, listTasksByChatSession, chatSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentTaskQueue{}
+	for rows.Next() {
+		var i AgentTaskQueue
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.Status,
+			&i.Priority,
+			&i.DispatchedAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Result,
+			&i.Error,
+			&i.CreatedAt,
+			&i.Context,
+			&i.RuntimeID,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.TriggerCommentID,
+			&i.ChatSessionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchChatSession = `-- name: TouchChatSession :exec
 UPDATE chat_session SET updated_at = now()
 WHERE id = $1
@@ -345,6 +389,22 @@ WHERE id = $1
 
 func (q *Queries) TouchChatSession(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, touchChatSession, id)
+	return err
+}
+
+const updateChatMessageTask = `-- name: UpdateChatMessageTask :exec
+UPDATE chat_message
+SET task_id = $2
+WHERE id = $1
+`
+
+type UpdateChatMessageTaskParams struct {
+	ID     pgtype.UUID `json:"id"`
+	TaskID pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) UpdateChatMessageTask(ctx context.Context, arg UpdateChatMessageTaskParams) error {
+	_, err := q.db.Exec(ctx, updateChatMessageTask, arg.ID, arg.TaskID)
 	return err
 }
 

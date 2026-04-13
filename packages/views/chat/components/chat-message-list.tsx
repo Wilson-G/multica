@@ -9,11 +9,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@multica/ui/components/ui/collapsible";
-import { Bot, Loader2, ChevronRight, ChevronDown, Brain, AlertCircle } from "lucide-react";
+import { Bot, Loader2, ChevronRight, ChevronDown, Brain, AlertCircle, Square } from "lucide-react";
 import { api } from "@multica/core/api";
 import { Markdown } from "@multica/views/common/markdown";
-import type { ChatMessage, Agent, TaskMessagePayload } from "@multica/core/types";
+import type { ChatMessage, Agent, AgentTask, TaskMessagePayload } from "@multica/core/types";
 import type { ChatTimelineItem } from "@multica/core/chat";
+import { getChatTurnState } from "./chat-state";
 
 // ─── Public component ────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ interface ChatMessageListProps {
   agent: Agent | null;
   timelineItems: ChatTimelineItem[];
   isWaiting: boolean;
+  tasksById?: Map<string, AgentTask>;
 }
 
 export function ChatMessageList({
@@ -29,6 +31,7 @@ export function ChatMessageList({
   agent,
   timelineItems,
   isWaiting,
+  tasksById = new Map(),
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -37,11 +40,22 @@ export function ChatMessageList({
   }, [messages, timelineItems]);
 
   const hasTimeline = timelineItems.length > 0;
+  const repliedTaskIds = new Set(
+    messages
+      .filter((message) => message.role === "assistant" && message.task_id)
+      .map((message) => message.task_id),
+  );
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} agent={agent} />
+        <MessageBubble
+          key={msg.id}
+          message={msg}
+          agent={agent}
+          task={msg.task_id ? tasksById.get(msg.task_id) : undefined}
+          hasAssistantReply={!!msg.task_id && repliedTaskIds.has(msg.task_id)}
+        />
       ))}
       {/* Live streaming timeline */}
       {hasTimeline && (
@@ -70,21 +84,60 @@ export function ChatMessageList({
 function MessageBubble({
   message,
   agent,
+  task,
+  hasAssistantReply,
 }: {
   message: ChatMessage;
   agent: Agent | null;
+  task?: AgentTask;
+  hasAssistantReply: boolean;
 }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="rounded-2xl bg-primary px-3.5 py-2 text-sm text-primary-foreground max-w-[85%] whitespace-pre-wrap break-words">
-          {message.content}
+      <div className="space-y-1">
+        <div className="flex justify-end">
+          <div className="rounded-2xl bg-primary px-3.5 py-2 text-sm text-primary-foreground max-w-[85%] whitespace-pre-wrap break-words">
+            {message.content}
+          </div>
         </div>
+        {!hasAssistantReply && <UserTurnState task={task} />}
       </div>
     );
   }
 
   return <AssistantMessage message={message} agent={agent} />;
+}
+
+function UserTurnState({ task }: { task?: AgentTask }) {
+  const state = getChatTurnState(task);
+  if (!state) {
+    return null;
+  }
+
+  const icon =
+    state.tone === "running" ? (
+      <Loader2 className="size-3 animate-spin" />
+    ) : state.tone === "failed" ? (
+      <AlertCircle className="size-3" />
+    ) : (
+      <Square className="size-2.5 fill-current" />
+    );
+
+  const toneClass =
+    state.tone === "running"
+      ? "text-muted-foreground"
+      : state.tone === "failed"
+        ? "text-destructive"
+        : "text-muted-foreground";
+
+  return (
+    <div className={cn("flex justify-end", toneClass)}>
+      <div className="flex max-w-[85%] items-center gap-1.5 px-1 text-[11px]">
+        {icon}
+        <span className="truncate">{state.label}</span>
+      </div>
+    </div>
+  );
 }
 
 function AssistantMessage({
