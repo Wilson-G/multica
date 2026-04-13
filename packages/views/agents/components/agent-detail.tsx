@@ -32,10 +32,17 @@ import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";
 import { TasksTab } from "./tabs/tasks-tab";
 import { SettingsTab } from "./tabs/settings-tab";
-import { ProviderBadge } from "../../runtimes/provider-display";
+import { ProviderBadge, formatProviderName } from "../../runtimes/provider-display";
 
 function getRuntimeDevice(agent: Agent, runtimes: RuntimeDevice[]): RuntimeDevice | undefined {
   return runtimes.find((runtime) => runtime.id === agent.runtime_id);
+}
+
+function getAgentProvider(agent: Agent): string | null {
+  const runtimeConfigProvider = agent.runtime_config?.provider;
+  return typeof runtimeConfigProvider === "string" && runtimeConfigProvider.length > 0
+    ? runtimeConfigProvider
+    : null;
 }
 
 type DetailTab = "instructions" | "skills" | "tasks" | "settings";
@@ -62,6 +69,8 @@ export function AgentDetail({
 }) {
   const st = statusConfig[agent.status];
   const runtimeDevice = getRuntimeDevice(agent, runtimes);
+  const fallbackProvider = getAgentProvider(agent);
+  const visibleProvider = runtimeDevice?.provider ?? fallbackProvider;
   const [activeTab, setActiveTab] = useState<DetailTab>("instructions");
   const [confirmArchive, setConfirmArchive] = useState(false);
   const isArchived = !!agent.archived_at;
@@ -95,11 +104,16 @@ export function AgentDetail({
                 {st.label}
               </span>
             )}
-            {runtimeDevice ? (
-              <ProviderBadge provider={runtimeDevice.provider} />
+            {visibleProvider ? (
+              <ProviderBadge provider={visibleProvider} />
             ) : (
               <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                 Runtime unavailable
+              </span>
+            )}
+            {!runtimeDevice && visibleProvider && (
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+                Runtime unavailable • {formatProviderName(visibleProvider)}
               </span>
             )}
             <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">

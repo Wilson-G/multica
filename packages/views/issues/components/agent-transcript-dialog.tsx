@@ -153,6 +153,13 @@ function formatElapsedMs(ms: number): string {
   return `${minutes}m ${secs}s`;
 }
 
+function getAgentProvider(agent: Agent | null): string | null {
+  const runtimeConfigProvider = agent?.runtime_config?.provider;
+  return typeof runtimeConfigProvider === "string" && runtimeConfigProvider.length > 0
+    ? runtimeConfigProvider
+    : null;
+}
+
 // ─── Main dialog ────────────────────────────────────────────────────────────
 
 export function AgentTranscriptDialog({
@@ -234,6 +241,7 @@ export function AgentTranscriptDialog({
         : null;
 
   const toolCount = items.filter((i) => i.type === "tool_use").length;
+  const visibleProvider = runtimeInfo?.provider ?? getAgentProvider(agentInfo);
 
   // Status display
   const statusBadge = isLive ? (
@@ -302,8 +310,8 @@ export function AgentTranscriptDialog({
           {/* Metadata chips row */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
             {/* Runtime provider */}
-            {runtimeInfo?.provider && (
-              <ProviderBadge provider={runtimeInfo.provider} className="h-6" />
+            {visibleProvider && (
+              <ProviderBadge provider={visibleProvider} className="h-6" />
             )}
 
             {/* Runtime environment */}
@@ -315,6 +323,12 @@ export function AgentTranscriptDialog({
                 <span className="text-muted-foreground/60 ml-0.5">
                   ({runtimeInfo.runtime_mode}, {formatProviderName(runtimeInfo.provider)})
                 </span>
+              </MetadataChip>
+            )}
+
+            {!runtimeInfo && visibleProvider && (
+              <MetadataChip icon={<AlertCircle className="h-3 w-3" />}>
+                Runtime unavailable ({formatProviderName(visibleProvider)})
               </MetadataChip>
             )}
 
