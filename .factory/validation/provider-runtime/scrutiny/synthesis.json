@@ -1,0 +1,66 @@
+{
+  "milestone": "provider-runtime",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cd \"/Users/will/dev/multica\" && set -a && . \".env.worktree\" && set +a && pnpm exec turbo test --concurrency=50% && cd server && go run ./cmd/migrate up && go test ./...",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cd \"/Users/will/dev/multica\" && set -a && . \".env.worktree\" && set +a && pnpm exec turbo typecheck --concurrency=50%",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cd \"/Users/will/dev/multica\" && pnpm exec turbo lint --concurrency=50%",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 1,
+    "failed": 2,
+    "failedFeatures": [
+      "droid-provider-runtime-backend-plumbing",
+      "droid-runtime-ui-and-agent-binding-surfaces"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "droid-provider-runtime-backend-plumbing",
+      "severity": "blocking",
+      "description": "Droid execution still reuses Codex home/auth/session state via `prepareCodexHome`, so a native Droid provider run can execute with the wrong credentials or fail on machines configured only for Droid."
+    },
+    {
+      "featureId": "droid-runtime-ui-and-agent-binding-surfaces",
+      "severity": "blocking",
+      "description": "Agent detail loses Droid provider attribution when the bound runtime is offline or absent from the live runtime list, breaking the required stable provider binding across reloads and liveness changes."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill:backend-runtime-worker",
+      "suggestion": "Clarify whether strict red-green evidence is mandatory for backend runtime features where the provider path does not exist yet, or enforce capturing a failing targeted test run before implementation.",
+      "evidence": "The review for `droid-provider-runtime-backend-plumbing` noted the worker added tests but only ran them after implementation, despite the skill currently instructing a failing test first.",
+      "isSystemic": false
+    },
+    {
+      "target": "skill:product-surface-worker",
+      "suggestion": "Clarify or enforce the requirement to add focused automated coverage for UI/provider-attribution work before implementation, especially for offline/history fallback states.",
+      "evidence": "The review for `droid-runtime-ui-and-agent-binding-surfaces` found a blocking offline-runtime attribution bug and noted that the feature shipped without new tests for the touched surfaces.",
+      "isSystemic": false
+    },
+    {
+      "target": "skill:validation-hardening-worker",
+      "suggestion": "Document that broken local daemon PAT/workspace auth can block required browser confirmation even when the code fix is correct, and spell out the prerequisite checks explicitly.",
+      "evidence": "The review for `provider-runtime-browser-auth-and-daemon-bootstrap` passed the code changes but recorded that browser confirmation was blocked by invalid daemon auth until library guidance was updated.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

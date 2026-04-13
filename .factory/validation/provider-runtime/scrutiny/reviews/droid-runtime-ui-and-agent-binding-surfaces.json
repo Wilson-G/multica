@@ -1,0 +1,28 @@
+{
+  "featureId": "droid-runtime-ui-and-agent-binding-surfaces",
+  "reviewedAt": "2026-04-13T02:27:50.282167+00:00",
+  "commitId": "f786245afc3801cf0e961bd1fe13a3a959085a59",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The UI work adds clear Droid branding across runtime and transcript surfaces, but the agent detail header loses stable provider attribution once the bound runtime is no longer in the live runtime list, which contradicts the feature requirement for visible attribution after reloads and runtime liveness changes.",
+    "issues": [
+      {
+        "file": "packages/views/agents/components/agent-detail.tsx",
+        "line": 100,
+        "severity": "blocking",
+        "description": "When `getRuntimeDevice()` cannot find the bound runtime (for example after reload when the runtime is offline or no longer returned), the header now renders only `Runtime unavailable` plus the raw `agent.runtime_id`. The `Agent` model has no persisted provider field, so the new `ProviderBadge` disappears entirely and users can no longer see that the agent is Droid-backed. That breaks the feature's expected behavior that agent detail/settings keep visible Droid runtime/provider binding across reloads and after runtime liveness changes."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The product-surface-worker skill requires adding or updating automated tests first and confirming a failing assertion before implementation, but this feature shipped without any new coverage for the touched provider-attribution surfaces.",
+      "evidence": "Handoff skillFeedback for worker session 8c6dd47f-1a85-4044-90b5-8e584e44af5b explicitly says the worker did not add a failing test first; commit f786245a modifies 8 UI files but adds no test files."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the feature handoff, transcript skeleton, architecture guidance, and commit f786245a. Found one blocking regression: agent detail loses Droid provider attribution whenever the runtime record is absent, so the feature does not fully satisfy the required stable visible binding across reloads/offline runtime scenarios."
+}
