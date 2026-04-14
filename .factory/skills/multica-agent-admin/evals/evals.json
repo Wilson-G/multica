@@ -1,0 +1,23 @@
+{
+  "skill_name": "multica-agent-admin",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我在 Multica 里创建一个新的 AI 员工，名字叫 Release Shepherd，负责发版协调和回滚检查。给它一个靠谱的人设、选合适的 runtime、设置成 workspace 可见，并把并发调得保守一点。",
+      "expected_output": "Creates a well-scoped agent with clear role description, instructions, runtime choice, visibility, and sensible concurrency.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "把现有的 Frontend Helper 这个 agent 调整一下：它现在太泛了，我要它更聚焦 React/Next.js 交付。顺便看看它当前技能，重新绑定成更合理的一组。",
+      "expected_output": "Inspects the existing agent, tightens its role and instructions, and updates its skill assignments coherently.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "我想知道我们那个叫 Ops Bot 的员工是不是该先停用。你检查一下它现在的任务情况和定位，如果适合就 archive，不适合就给我一个不归档的理由。",
+      "expected_output": "Reviews agent details and workload before deciding whether archiving is appropriate, with a reasoned recommendation or action.",
+      "files": []
+    }
+  ]
+}

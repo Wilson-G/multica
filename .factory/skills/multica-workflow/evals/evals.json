@@ -1,0 +1,23 @@
+{
+  "skill_name": "multica-workflow",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我需要你在 Multica 里把这个需求落成任务：把桌面端登录页的错误提示文案统一一下，优先级 high，分给名叫 Lambda 的 agent，并且如果现有 issue 不合适就新建一个，最后给我一个简短汇报。",
+      "expected_output": "Uses Multica issue workflow to inspect or create an issue, assign it appropriately, and report the resulting task state clearly.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "请帮我跟进 MUL-123：先看看现在的评论和最近一次执行记录，如果上次已经做完就回收结果并推进状态；如果卡住了就说明 blocker 并继续追问对应的人。",
+      "expected_output": "Uses comments plus run history to reconstruct state, then posts the right follow-up and moves status appropriately.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "有人在任务评论里回复说需要我补充上下文。你来处理这个 Multica 线程：读完整个 issue 和评论链，如果需要继续做事就先做，再用 reply 形式回复，不要把线程弄乱。",
+      "expected_output": "Reads issue and threaded comments, preserves reply structure, and handles follow-up work before responding.",
+      "files": []
+    }
+  ]
+}
