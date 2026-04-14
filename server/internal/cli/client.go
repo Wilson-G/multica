@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -244,7 +245,12 @@ func (c *APIClient) UploadFile(ctx context.Context, fileData []byte, filename st
 // This is used for downloading attachments via their signed download_url.
 // Downloads are limited to 100 MB to match the upload size limit.
 func (c *APIClient) DownloadFile(ctx context.Context, downloadURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	resolvedURL, err := c.resolveDownloadURL(downloadURL)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resolvedURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +268,23 @@ func (c *APIClient) DownloadFile(ctx context.Context, downloadURL string) ([]byt
 
 	const maxDownloadSize = 100 << 20 // 100 MB
 	return io.ReadAll(io.LimitReader(resp.Body, maxDownloadSize))
+}
+
+func (c *APIClient) resolveDownloadURL(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse download URL: %w", err)
+	}
+	if parsed.IsAbs() {
+		return parsed.String(), nil
+	}
+
+	base, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse base URL: %w", err)
+	}
+
+	return base.ResolveReference(parsed).String(), nil
 }
 
 // HealthCheck hits the /health endpoint and returns the response body.
