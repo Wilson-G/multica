@@ -130,9 +130,9 @@ func (e *inboundEnricher) Enrich(ctx context.Context, msg InboundMessage, creds 
 	if freshSource == "" {
 		freshSource = msg.Body
 	}
-	if cmd, ok := parseFreshSessionCommand(freshSource); ok {
+	if _, ok := parseFreshSessionCommand(freshSource); ok {
 		msg.ForceFreshSession = true
-		msg.Body = cmd.Body
+		msg.Body = ""
 	}
 
 	isForward := msg.MessageType == larkMsgTypeMergeForward

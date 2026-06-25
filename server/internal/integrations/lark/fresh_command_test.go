@@ -7,31 +7,26 @@ func TestParseFreshSessionCommand(t *testing.T) {
 		name      string
 		body      string
 		wantMatch bool
-		wantBody  string
 	}{
 		{
-			name:      "new with same-line body",
-			body:      "/new start from scratch",
-			wantMatch: true,
-			wantBody:  "start from scratch",
-		},
-		{
-			name:      "leading blank lines tolerated",
-			body:      "\n\n/new re-check the deploy",
-			wantMatch: true,
-			wantBody:  "re-check the deploy",
-		},
-		{
-			name:      "multi-line body preserved",
-			body:      "/new title\nline one\nline two",
-			wantMatch: true,
-			wantBody:  "title\nline one\nline two",
-		},
-		{
-			name:      "command alone produces empty body",
+			name:      "exact command matches",
 			body:      "/new",
 			wantMatch: true,
-			wantBody:  "",
+		},
+		{
+			name:      "leading and trailing whitespace tolerated",
+			body:      "\n \t/new \t\n",
+			wantMatch: true,
+		},
+		{
+			name:      "same-line body rejected",
+			body:      "/new start from scratch",
+			wantMatch: false,
+		},
+		{
+			name:      "multi-line body rejected",
+			body:      "/new\nline one\nline two",
+			wantMatch: false,
 		},
 		{
 			name:      "prefix of token rejected",
@@ -66,9 +61,6 @@ func TestParseFreshSessionCommand(t *testing.T) {
 					t.Fatalf("expected nil command, got %+v", cmd)
 				}
 				return
-			}
-			if cmd.Body != tc.wantBody {
-				t.Errorf("body=%q want %q", cmd.Body, tc.wantBody)
 			}
 		})
 	}
