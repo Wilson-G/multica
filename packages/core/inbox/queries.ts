@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { InboxItem } from "../types";
 
@@ -12,6 +12,22 @@ export function inboxListOptions(wsId: string) {
     queryKey: inboxKeys.list(wsId),
     queryFn: () => api.listInbox(),
   });
+}
+
+/**
+ * Unread inbox count for the given workspace, aligned with what the inbox
+ * list UI renders: archived items excluded, then deduplicated by issue so a
+ * single issue with three unread notifications counts once.
+ */
+export function useInboxUnreadCount(wsId: string | null | undefined): number {
+  const { data } = useQuery({
+    queryKey: inboxKeys.list(wsId ?? ""),
+    queryFn: () => api.listInbox(),
+    enabled: !!wsId,
+    select: (items: InboxItem[]) =>
+      deduplicateInboxItems(items).filter((i) => !i.read).length,
+  });
+  return data ?? 0;
 }
 
 /**
@@ -34,7 +50,22 @@ export function deduplicateInboxItems(items: InboxItem[]): InboxItem[] {
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
-    if (group[0]) merged.push(group[0]);
+    const newest = group[0];
+    if (!newest) continue;
+
+    const commentId =
+      newest.details?.comment_id ??
+      group.find((item) => item.details?.comment_id)?.details?.comment_id;
+
+    if (commentId && newest.details?.comment_id !== commentId) {
+      merged.push({
+        ...newest,
+        details: { ...(newest.details ?? {}), comment_id: commentId },
+      });
+      continue;
+    }
+
+    merged.push(newest);
   }
   return merged.sort(
     (a, b) =>

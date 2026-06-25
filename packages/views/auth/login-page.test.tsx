@@ -1,6 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement, ReactNode } from "react";
+import { I18nProvider } from "@multica/core/i18n/react";
+import enCommon from "../locales/en/common.json";
+import enAuth from "../locales/en/auth.json";
+import enSettings from "../locales/en/settings.json";
+
+const TEST_RESOURCES = {
+  en: { common: enCommon, auth: enAuth, settings: enSettings },
+};
+
+function I18nWrapper({ children }: { children: ReactNode }) {
+  return (
+    <I18nProvider locale="en" resources={TEST_RESOURCES}>
+      {children}
+    </I18nProvider>
+  );
+}
+
+function renderWithI18n(ui: ReactElement) {
+  return render(ui, { wrapper: I18nWrapper });
+}
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
@@ -8,11 +29,19 @@ import userEvent from "@testing-library/user-event";
 
 const mockSendCode = vi.hoisted(() => vi.fn());
 const mockVerifyCode = vi.hoisted(() => vi.fn());
-const mockHydrateWorkspace = vi.hoisted(() => vi.fn());
 const mockApiListWorkspaces = vi.hoisted(() => vi.fn());
 const mockApiVerifyCode = vi.hoisted(() => vi.fn());
 const mockApiSetToken = vi.hoisted(() => vi.fn());
 const mockApiGetMe = vi.hoisted(() => vi.fn());
+const mockApiIssueCliToken = vi.hoisted(() => vi.fn());
+const mockSetQueryData = vi.hoisted(() => vi.fn());
+
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
+    "@tanstack/react-query",
+  );
+  return { ...actual, useQueryClient: () => ({ setQueryData: mockSetQueryData }) };
+});
 
 vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
@@ -30,26 +59,13 @@ vi.mock("@multica/core/auth", () => ({
   ),
 }));
 
-vi.mock("@multica/core/workspace", () => ({
-  useWorkspaceStore: Object.assign(
-    (selector?: (s: unknown) => unknown) => {
-      const state = { hydrateWorkspace: mockHydrateWorkspace };
-      return selector ? selector(state) : state;
-    },
-    {
-      getState: () => ({
-        hydrateWorkspace: mockHydrateWorkspace,
-      }),
-    },
-  ),
-}));
-
 vi.mock("@multica/core/api", () => ({
   api: {
     listWorkspaces: mockApiListWorkspaces,
     verifyCode: mockApiVerifyCode,
     setToken: mockApiSetToken,
     getMe: mockApiGetMe,
+    issueCliToken: mockApiIssueCliToken,
   },
 }));
 
@@ -80,7 +96,8 @@ describe("LoginPage", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
-    // Default: no existing session
+    // Default: no existing session (getMe rejects when no auth)
+    mockApiGetMe.mockRejectedValue(new Error("unauthorized"));
     localStorage.clear();
     // Reset window.location for tests that change it
     Object.defineProperty(window, "location", {
@@ -98,7 +115,7 @@ describe("LoginPage", () => {
   // -------------------------------------------------------------------------
 
   it("renders email form with 'Sign in to Multica' title", () => {
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
       screen.getByText(/sign in to multica/i),
     ).toBeInTheDocument();
@@ -116,7 +133,7 @@ describe("LoginPage", () => {
   // -------------------------------------------------------------------------
 
   it("shows error when submitting with empty email", async () => {
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     // The Continue button is disabled when email is empty, so we submit the
     // form programmatically the same way the component does — via form submit.
@@ -144,7 +161,7 @@ describe("LoginPage", () => {
 
   it("calls sendCode on form submit with email", async () => {
     mockSendCode.mockResolvedValueOnce(undefined);
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -156,7 +173,7 @@ describe("LoginPage", () => {
   it("shows 'Sending code...' while submitting", async () => {
     // Never resolve so loading stays true
     mockSendCode.mockReturnValueOnce(new Promise(() => {}));
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -167,7 +184,7 @@ describe("LoginPage", () => {
 
   it("transitions to code step after successful sendCode", async () => {
     mockSendCode.mockResolvedValueOnce(undefined);
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -181,9 +198,26 @@ describe("LoginPage", () => {
     expect(screen.getByText(/test@example.com/)).toBeInTheDocument();
   });
 
+  it("autofocuses the OTP input when the code step opens", async () => {
+    mockSendCode.mockResolvedValueOnce(undefined);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/check your email/i)).toBeInTheDocument();
+    });
+
+    // The OTP field should be focused on mount so the user can type the code
+    // without clicking it first — important when repeatedly switching accounts.
+    expect(getOTPInput()).toHaveFocus();
+  });
+
   it("shows error when sendCode fails", async () => {
     mockSendCode.mockRejectedValueOnce(new Error("Rate limited"));
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -196,7 +230,7 @@ describe("LoginPage", () => {
 
   it("shows generic error when sendCode throws non-Error", async () => {
     mockSendCode.mockRejectedValueOnce("boom");
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -213,13 +247,12 @@ describe("LoginPage", () => {
   // Code verification
   // -------------------------------------------------------------------------
 
-  it("calls verifyCode, listWorkspaces, hydrateWorkspace, then onSuccess", async () => {
+  it("calls verifyCode, seeds workspace list cache, then onSuccess", async () => {
     mockSendCode.mockResolvedValueOnce(undefined);
     mockVerifyCode.mockResolvedValueOnce(undefined);
     mockApiListWorkspaces.mockResolvedValueOnce([{ id: "ws-1" }]);
-    mockHydrateWorkspace.mockReturnValueOnce({ id: "ws-1" });
 
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     // Step 1: email
@@ -242,9 +275,11 @@ describe("LoginPage", () => {
         "123456",
       );
       expect(mockApiListWorkspaces).toHaveBeenCalled();
-      expect(mockHydrateWorkspace).toHaveBeenCalledWith(
+      // The workspace list is seeded into React Query so onSuccess can read
+      // it synchronously to compute a destination URL.
+      expect(mockSetQueryData).toHaveBeenCalledWith(
+        expect.arrayContaining(["workspaces", "list"]),
         [{ id: "ws-1" }],
-        undefined,
       );
       expect(onSuccess).toHaveBeenCalled();
     });
@@ -254,7 +289,7 @@ describe("LoginPage", () => {
     mockSendCode.mockResolvedValueOnce(undefined);
     mockVerifyCode.mockRejectedValueOnce(new Error("Invalid code"));
 
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -281,7 +316,7 @@ describe("LoginPage", () => {
 
   it("disables resend button during cooldown", async () => {
     mockSendCode.mockResolvedValue(undefined);
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -293,7 +328,7 @@ describe("LoginPage", () => {
       ).toBeInTheDocument();
     });
 
-    // After transitioning to code step, cooldown is 10s
+    // After transitioning to code step, cooldown is 60s
     const resendBtn = screen.getByRole("button", { name: /resend in/i });
     expect(resendBtn).toBeDisabled();
   });
@@ -301,7 +336,7 @@ describe("LoginPage", () => {
   it("shows resend button with cooldown text after sending code", async () => {
     mockSendCode.mockResolvedValue(undefined);
     const user = userEvent.setup();
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
@@ -316,7 +351,7 @@ describe("LoginPage", () => {
 
   it("calls sendCode again when resend is clicked after cooldown", async () => {
     mockSendCode.mockResolvedValue(undefined);
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -329,9 +364,9 @@ describe("LoginPage", () => {
     // sendCode was called once for the initial send
     expect(mockSendCode).toHaveBeenCalledTimes(1);
 
-    // Advance past the 10s cooldown one second at a time so React can
+    // Advance past the 60s cooldown one second at a time so React can
     // process each setCooldown state update between ticks.
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 61; i++) {
       await act(async () => {
         vi.advanceTimersByTime(1_000);
       });
@@ -365,7 +400,7 @@ describe("LoginPage", () => {
   });
 
   it("hides Google OAuth button when google prop omitted", () => {
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
       screen.queryByRole("button", { name: /continue with google/i }),
     ).not.toBeInTheDocument();
@@ -377,11 +412,14 @@ describe("LoginPage", () => {
 
   it("shows cli_confirm step when existing session + cliCallback", async () => {
     localStorage.setItem("multica_token", "existing-jwt");
-    mockApiGetMe.mockResolvedValueOnce({
-      id: "u-1",
-      email: "user@example.com",
-      name: "Test User",
-    });
+    // Cookie attempt fails first, then localStorage fallback succeeds
+    mockApiGetMe
+      .mockRejectedValueOnce(new Error("no cookie"))
+      .mockResolvedValueOnce({
+        id: "u-1",
+        email: "user@example.com",
+        name: "Test User",
+      });
 
     render(
       <LoginPage
@@ -406,11 +444,14 @@ describe("LoginPage", () => {
 
   it("CLI authorize button redirects to callback URL", async () => {
     localStorage.setItem("multica_token", "existing-jwt");
-    mockApiGetMe.mockResolvedValueOnce({
-      id: "u-1",
-      email: "user@example.com",
-      name: "Test User",
-    });
+    // Cookie attempt fails, localStorage fallback succeeds
+    mockApiGetMe
+      .mockRejectedValueOnce(new Error("no cookie"))
+      .mockResolvedValueOnce({
+        id: "u-1",
+        email: "user@example.com",
+        name: "Test User",
+      });
     const onTokenObtained = vi.fn();
 
     render(
@@ -438,11 +479,14 @@ describe("LoginPage", () => {
 
   it("'Use a different account' returns to email step", async () => {
     localStorage.setItem("multica_token", "existing-jwt");
-    mockApiGetMe.mockResolvedValueOnce({
-      id: "u-1",
-      email: "user@example.com",
-      name: "Test User",
-    });
+    // Cookie attempt fails, localStorage fallback succeeds
+    mockApiGetMe
+      .mockRejectedValueOnce(new Error("no cookie"))
+      .mockResolvedValueOnce({
+        id: "u-1",
+        email: "user@example.com",
+        name: "Test User",
+      });
 
     render(
       <LoginPage
@@ -465,6 +509,65 @@ describe("LoginPage", () => {
     expect(
       screen.getByText(/sign in to multica/i),
     ).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // CLI callback — cookie-based session (no localStorage token)
+  // -------------------------------------------------------------------------
+
+  it("detects cookie-based session and shows cli_confirm when no localStorage token", async () => {
+    // No localStorage token — getMe succeeds via HttpOnly cookie
+    mockApiGetMe.mockResolvedValueOnce({
+      id: "u-1",
+      email: "cookie@example.com",
+      name: "Cookie User",
+    });
+
+    render(
+      <LoginPage
+        onSuccess={onSuccess}
+        cliCallback={{ url: "http://localhost:9876/callback", state: "abc" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/authorize cli/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/cookie@example.com/)).toBeInTheDocument();
+  });
+
+  it("CLI authorize with cookie session calls issueCliToken and redirects", async () => {
+    // No localStorage token — getMe succeeds via cookie
+    mockApiGetMe.mockResolvedValueOnce({
+      id: "u-1",
+      email: "cookie@example.com",
+      name: "Cookie User",
+    });
+    mockApiIssueCliToken.mockResolvedValueOnce({ token: "fresh-jwt" });
+    const onTokenObtained = vi.fn();
+
+    render(
+      <LoginPage
+        onSuccess={onSuccess}
+        onTokenObtained={onTokenObtained}
+        cliCallback={{ url: "http://localhost:9876/callback", state: "abc" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/authorize cli/i)).toBeInTheDocument();
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^authorize$/i }));
+
+    await waitFor(() => {
+      expect(mockApiIssueCliToken).toHaveBeenCalled();
+      expect(onTokenObtained).toHaveBeenCalled();
+      expect(window.location.href).toContain(
+        "http://localhost:9876/callback?token=fresh-jwt&state=abc",
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -529,7 +632,7 @@ describe("LoginPage", () => {
   });
 
   it("does not render logo placeholder when omitted", () => {
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(screen.queryByTestId("custom-logo")).not.toBeInTheDocument();
   });
 
@@ -541,7 +644,6 @@ describe("LoginPage", () => {
     mockSendCode.mockResolvedValueOnce(undefined);
     mockVerifyCode.mockResolvedValueOnce(undefined);
     mockApiListWorkspaces.mockResolvedValueOnce([{ id: "ws-1" }]);
-    mockHydrateWorkspace.mockReturnValueOnce({ id: "ws-1" });
     const onTokenObtained = vi.fn();
 
     render(
@@ -576,7 +678,7 @@ describe("LoginPage", () => {
 
   it("back button returns to email step", async () => {
     mockSendCode.mockResolvedValueOnce(undefined);
-    render(<LoginPage onSuccess={onSuccess} />);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
@@ -595,43 +697,6 @@ describe("LoginPage", () => {
     ).toBeInTheDocument();
   });
 
-  // -------------------------------------------------------------------------
-  // lastWorkspaceId
-  // -------------------------------------------------------------------------
-
-  it("passes lastWorkspaceId to hydrateWorkspace", async () => {
-    mockSendCode.mockResolvedValueOnce(undefined);
-    mockVerifyCode.mockResolvedValueOnce(undefined);
-    mockApiListWorkspaces.mockResolvedValueOnce([
-      { id: "ws-1" },
-      { id: "ws-2" },
-    ]);
-    mockHydrateWorkspace.mockReturnValueOnce({ id: "ws-2" });
-
-    render(
-      <LoginPage onSuccess={onSuccess} lastWorkspaceId="ws-2" />,
-    );
-
-    const user = userEvent.setup();
-    await user.type(screen.getByLabelText(/email/i), "test@example.com");
-    await user.click(screen.getByRole("button", { name: /continue/i }));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/check your email/i),
-      ).toBeInTheDocument();
-    });
-
-    const otpInput = getOTPInput();
-    await user.type(otpInput, "123456");
-
-    await waitFor(() => {
-      expect(mockHydrateWorkspace).toHaveBeenCalledWith(
-        [{ id: "ws-1" }, { id: "ws-2" }],
-        "ws-2",
-      );
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -647,12 +712,34 @@ describe("validateCliCallback", () => {
     expect(validateCliCallback("http://127.0.0.1:8080/cb")).toBe(true);
   });
 
+  it("accepts 10.x.x.x private IPs", () => {
+    expect(validateCliCallback("http://10.0.0.5:9876/callback")).toBe(true);
+    expect(validateCliCallback("http://10.255.255.255:1234/cb")).toBe(true);
+  });
+
+  it("accepts 172.16-31.x.x private IPs", () => {
+    expect(validateCliCallback("http://172.16.0.1:9876/callback")).toBe(true);
+    expect(validateCliCallback("http://172.31.255.255:1234/cb")).toBe(true);
+  });
+
+  it("rejects 172.x outside 16-31 range", () => {
+    expect(validateCliCallback("http://172.15.0.1:9876/callback")).toBe(false);
+    expect(validateCliCallback("http://172.32.0.1:9876/callback")).toBe(false);
+  });
+
+  it("accepts 192.168.x.x private IPs", () => {
+    expect(validateCliCallback("http://192.168.1.131:41117/callback")).toBe(true);
+    expect(validateCliCallback("http://192.168.0.1:8080/cb")).toBe(true);
+  });
+
   it("rejects https:// URLs", () => {
     expect(validateCliCallback("https://localhost:9876/callback")).toBe(false);
   });
 
-  it("rejects non-localhost hosts", () => {
+  it("rejects public IPs and domains", () => {
     expect(validateCliCallback("http://evil.com:9876/callback")).toBe(false);
+    expect(validateCliCallback("http://8.8.8.8:9876/callback")).toBe(false);
+    expect(validateCliCallback("http://192.169.1.1:9876/callback")).toBe(false);
   });
 
   it("rejects invalid URLs", () => {

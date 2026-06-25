@@ -1,11 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { useNavigation } from "../navigation";
-import { toast } from "sonner";
+import { DragStrip } from "../platform";
 import { ArrowLeft } from "lucide-react";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
 import { Button } from "@multica/ui/components/ui/button";
 import {
   Dialog,
@@ -13,122 +10,82 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@multica/ui/components/ui/dialog";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
-import { useWorkspaceStore } from "@multica/core/workspace";
-
-const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+import { paths } from "@multica/core/paths";
+import { useConfigStore } from "@multica/core/config";
+import { CreateWorkspaceForm } from "../workspace/create-workspace-form";
+import { useT } from "../i18n";
 
 export function CreateWorkspaceModal({ onClose }: { onClose: () => void }) {
+  const { t } = useT("modals");
+  const tWorkspace = useT("workspace").t;
   const router = useNavigation();
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  const slugError =
-    slug.length > 0 && !SLUG_REGEX.test(slug)
-      ? "Only lowercase letters, numbers, and hyphens"
-      : null;
-
-  const canSubmit = name.trim().length > 0 && slug.trim().length > 0 && !slugError;
-
-  const handleNameChange = (value: string) => {
-    setName(value);
-    setSlug(
-      value
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, ""),
-    );
-  };
-
-  const handleCreate = async () => {
-    if (!canSubmit) return;
-    setCreating(true);
-    try {
-      const { createWorkspace, switchWorkspace } =
-        useWorkspaceStore.getState();
-      const ws = await createWorkspace({
-        name: name.trim(),
-        slug: slug.trim(),
-      });
-      onClose();
-      router.push("/issues");
-      await switchWorkspace(ws.id);
-    } catch {
-      toast.error("Failed to create workspace");
-    } finally {
-      setCreating(false);
-    }
-  };
+  const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
 
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent
+        finalFocus={false}
         showCloseButton={false}
-        className="inset-0 flex h-full w-full max-w-none sm:max-w-none translate-0 flex-col items-center justify-center rounded-none bg-background ring-0 shadow-none"
+        className="inset-0 flex h-full w-full max-w-none sm:max-w-none translate-0 flex-col rounded-none bg-background ring-0 shadow-none"
       >
+        {/* DragStrip as flex child — macOS traffic lights stay visible and
+            the top 48px is draggable. Back button sits just below the strip
+            (top-16 = 64px), clear of both traffic lights (y<=27) and the
+            strip (y<=48). `no-drag` is a belt-and-braces guard in case the
+            button's layout ever creeps up into the strip zone. */}
+        <DragStrip />
+
         <Button
           variant="ghost"
           size="sm"
-          className="absolute top-6 left-6 text-muted-foreground"
+          className="absolute top-16 left-12 text-muted-foreground"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           onClick={onClose}
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          {t(($) => $.common.back)}
         </Button>
 
-        <div className="flex w-full max-w-md flex-col items-center gap-6">
-          <div className="text-center">
-            <DialogTitle className="text-2xl font-semibold">
-              Create a new workspace
-            </DialogTitle>
-            <DialogDescription className="mt-2">
-              Workspaces are shared environments where teams can work on
-              projects and issues.
-            </DialogDescription>
-          </div>
-
-          <Card className="w-full">
-            <CardContent className="space-y-4 pt-6">
-              <div className="space-y-1.5">
-                <Label>Workspace Name</Label>
-                <Input
-                  autoFocus
-                  type="text"
-                  value={name}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  placeholder="My Workspace"
-                />
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12">
+          <div className="flex w-full max-w-md flex-col items-center gap-6">
+            {workspaceCreationDisabled ? (
+              <div className="text-center">
+                <DialogTitle className="text-2xl font-semibold">
+                  {tWorkspace(($) => $.creation_disabled.title)}
+                </DialogTitle>
+                <DialogDescription className="mt-2">
+                  {tWorkspace(($) => $.creation_disabled.description)}
+                </DialogDescription>
               </div>
-              <div className="space-y-1.5">
-                <Label>Workspace URL</Label>
-                <div className="flex items-center gap-0 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring">
-                  <span className="pl-3 text-sm text-muted-foreground select-none">
-                    multica.app/
-                  </span>
-                  <Input
-                    type="text"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                    placeholder="my-workspace"
-                    className="border-0 shadow-none focus-visible:ring-0"
-                  />
+            ) : (
+              <>
+                <div className="text-center">
+                  <DialogTitle className="text-2xl font-semibold">
+                    {t(($) => $.create_workspace.title)}
+                  </DialogTitle>
+                  <DialogDescription className="mt-2">
+                    {t(($) => $.create_workspace.description)}
+                  </DialogDescription>
                 </div>
-                {slugError && (
-                  <p className="text-xs text-destructive">{slugError}</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handleCreate}
-            disabled={creating || !canSubmit}
-          >
-            {creating ? "Creating..." : "Create workspace"}
-          </Button>
+                <CreateWorkspaceForm
+                  onSuccess={(newWs) => {
+                    onClose();
+                    // Navigate INTO the new workspace. The mutation's own onSuccess
+                    // (in core/workspace/mutations.ts) runs before this callback and
+                    // has already seeded the workspace list cache, so the destination
+                    // [workspaceSlug]/layout will resolve newWs.slug → workspace
+                    // synchronously without a loading flash.
+                    router.push(paths.workspace(newWs.slug).issues());
+                  }}
+                />
+              </>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

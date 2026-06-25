@@ -4,86 +4,46 @@
  * FileCard — Tiptap node extension for rendering uploaded non-image files
  * as styled cards instead of plain markdown links.
  *
- * Markdown serialization: `[filename](href)` — standard link syntax.
- * Preprocessing in preprocess.ts converts standalone CDN file links back
- * to fileCard HTML on load, completing the roundtrip.
+ * Markdown serialization: `!file[filename](href)` — custom syntax that is
+ * unambiguous (standard `[name](url)` is indistinguishable from regular links).
+ *
+ * Loading pipeline: preprocessFileCards in preprocess.ts converts both the
+ * new `!file[name](url)` syntax AND legacy `[name](cdnUrl)` lines into HTML
+ * divs BEFORE @tiptap/markdown parses the content. The markdownTokenizer
+ * below acts as a fallback for any direct markdown parsing that bypasses
+ * preprocessing.
  */
 
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
-import { FileText, Loader2, Download } from "lucide-react";
+import { FILE_CARD_URL_PATTERN } from "@multica/ui/markdown";
+import { escapeMarkdownLabel } from "../utils/escape-markdown-label";
+import { Attachment } from "../attachment";
+
+const FILE_CARD_MARKDOWN_RE = new RegExp(
+  `^!file\\[((?:\\\\.|[^\\]])*)\\]\\((${FILE_CARD_URL_PATTERN.source})\\)`,
+);
 
 
 // ---------------------------------------------------------------------------
-// CDN URL detection
+// React NodeView — thin wrapper, all rendering lives in <Attachment>
 // ---------------------------------------------------------------------------
 
-const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|ico|bmp|tiff?)$/i;
-
-/** Check if a URL points to our upload CDN (CloudFront or S3 bucket). */
-export function isCdnUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return (
-      u.hostname.endsWith(".copilothub.ai") ||
-      u.hostname.endsWith(".amazonaws.com")
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** Check if a CDN URL is a non-image file that should render as a file card. */
-export function isFileCardUrl(url: string): boolean {
-  return isCdnUrl(url) && !IMAGE_EXTS.test(new URL(url).pathname);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// React NodeView
-// ---------------------------------------------------------------------------
-
-function FileCardView({ node }: NodeViewProps) {
+export function FileCardView({ node, editor, deleteNode }: NodeViewProps) {
   const href = (node.attrs.href as string) || "";
   const filename = (node.attrs.filename as string) || "";
   const uploading = node.attrs.uploading as boolean;
-
-  const openFile = () => {
-    window.open(href, "_blank", "noopener,noreferrer");
-  };
+  const editable = editor?.isEditable ?? false;
 
   return (
     <NodeViewWrapper as="div" className="file-card-node" data-type="fileCard">
-      <div
-        className="my-1 flex items-center gap-2 rounded-md border border-border bg-muted/50 px-2.5 py-1 transition-colors hover:bg-muted"
-        contentEditable={false}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {uploading ? (
-          <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-        ) : (
-          <FileText className="size-4 shrink-0 text-muted-foreground" />
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm">{uploading ? `Uploading ${filename}` : filename}</p>
-        </div>
-        {!uploading && href && (
-          <button
-            type="button"
-            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              openFile();
-            }}
-          >
-            <Download className="size-3.5" />
-          </button>
-        )}
+      <div contentEditable={false}>
+        <Attachment
+          attachment={{ kind: "url", url: href, filename, uploading }}
+          editable={editable}
+          onDelete={editable ? deleteNode : undefined}
+        />
       </div>
     </NodeViewWrapper>
   );
@@ -146,10 +106,32 @@ export const FileCardExtension = Node.create({
     ];
   },
 
-  // Markdown serialization: fileCard → [filename](href)
+  // Markdown: custom !file[name](url) syntax for unambiguous roundtrip.
+  // Standard [name](url) is indistinguishable from regular links — the old
+  // regex-based CDN hostname matching in preprocessFileCards was fragile.
+  markdownTokenizer: {
+    name: "fileCard",
+    level: "block" as const,
+    start(src: string) {
+      return src.search(/^!file\[/m);
+    },
+    tokenize(src: string) {
+      const match = src.match(FILE_CARD_MARKDOWN_RE);
+      if (!match) return undefined;
+      const filename = (match[1] ?? "").replace(/\\([[\]\\()])/g, "$1");
+      return {
+        type: "fileCard",
+        raw: match[0],
+        attributes: { filename, href: match[2] },
+      };
+    },
+  },
+  parseMarkdown: (token: any, helpers: any) => {
+    return helpers.createNode("fileCard", token.attributes);
+  },
   renderMarkdown: (node: any) => {
     const { href, filename } = node.attrs || {};
-    return `[${filename || "file"}](${href})`;
+    return `!file[${escapeMarkdownLabel(filename || "file")}](${href})`;
   },
 
   addNodeView() {

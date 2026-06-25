@@ -1,12 +1,20 @@
 import * as React from 'react'
 import ReactMarkdown, { type Components, defaultUrlTransform } from 'react-markdown'
+import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import { FileText, Download } from 'lucide-react'
 import { cn } from '@multica/ui/lib/utils'
+import { CODE_LIGATURE_CLASS } from '@multica/ui/lib/code-style'
 import { CodeBlock, InlineCode } from './CodeBlock'
+import { isAllowedFileCardHref, preprocessFileCards } from './file-cards'
 import { preprocessLinks } from './linkify'
 import { preprocessMentionShortcodes } from './mentions'
+import 'katex/dist/katex.min.css'
+import './markdown.css'
 
 /**
  * Render modes for markdown content:
@@ -48,21 +56,47 @@ export interface MarkdownProps {
    * When not provided, mentions render as a simple styled span.
    */
   renderMention?: (props: { type: string; id: string }) => React.ReactNode
+  /**
+   * CDN hostname for file card detection (e.g. "multica-static.copilothub.ai").
+   * When provided, enables file card preprocessing and rendering.
+   */
+  cdnDomain?: string
+  /**
+   * Optional override for the image renderer. When provided, replaces the
+   * default `<img>` with constrained sizing. The views-package wrapper uses
+   * this to inject the unified `<Attachment>` component so chat messages get
+   * the same hover toolbar / lightbox / preview-modal treatment as comments.
+   */
+  renderImage?: (props: { src: string; alt: string }) => React.ReactNode
+  /**
+   * Optional override for the file-card renderer. When provided, replaces
+   * the simplified card chrome (filename + download button) with whatever
+   * the caller supplies. Used the same way as `renderImage` to bridge into
+   * the views-package `<Attachment>` component.
+   */
+  renderFileCard?: (props: { href: string; filename: string }) => React.ReactNode
 }
 
 // Sanitization schema — extends GitHub defaults to allow code highlighting classes
-// and the mention:// protocol used for @mentions.
+// and Multica's internal mention/slash protocols.
 const sanitizeSchema = {
   ...defaultSchema,
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), 'mention'],
+    href: [...(defaultSchema.protocols?.href ?? []), 'mention', 'slash'],
   },
   attributes: {
     ...defaultSchema.attributes,
+    div: [
+      ...(defaultSchema.attributes?.div ?? []),
+      'dataType',
+      'dataHref',
+      'dataFilename',
+    ],
     code: [
       ...(defaultSchema.attributes?.code ?? []),
       ['className', /^language-/],
+      ['className', /^math-/],
       ['className', /^hljs/],
     ],
     img: [
@@ -73,11 +107,12 @@ const sanitizeSchema = {
 }
 
 /**
- * Custom URL transform that allows mention:// protocol (used for @mentions)
- * while keeping the default security for all other URLs.
+ * Custom URL transform that allows Multica internal protocols while keeping
+ * the default security for all other URLs.
  */
 function urlTransform(url: string): string {
   if (url.startsWith('mention://')) return url
+  if (url.startsWith('slash://skill/')) return url
   return defaultUrlTransform(url)
 }
 
@@ -93,29 +128,70 @@ function createComponents(
   mode: RenderMode,
   onUrlClick?: (url: string) => void,
   onFileClick?: (path: string) => void,
-  renderMention?: (props: { type: string; id: string }) => React.ReactNode
+  renderMention?: (props: { type: string; id: string }) => React.ReactNode,
+  renderImage?: (props: { src: string; alt: string }) => React.ReactNode,
+  renderFileCard?: (props: { href: string; filename: string }) => React.ReactNode,
 ): Partial<Components> {
   const baseComponents: Partial<Components> = {
+    // FileCard: intercept <div data-type="fileCard"> from preprocessFileCards
+    div: ({ node, children, ...props }) => {
+      const dataType = node?.properties?.dataType as string | undefined
+      if (dataType === 'fileCard') {
+        const rawHref = (node?.properties?.dataHref as string) || ''
+        const href = isAllowedFileCardHref(rawHref) ? rawHref : ''
+        const filename = (node?.properties?.dataFilename as string) || ''
+        if (renderFileCard) {
+          return <>{renderFileCard({ href, filename })}</>
+        }
+        return (
+          <div className="my-1 flex items-center gap-2 rounded-md border border-border bg-muted/50 px-2.5 py-1 transition-colors hover:bg-muted">
+            <FileText className="size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm">{filename}</p>
+            </div>
+            {href && (
+              <button
+                type="button"
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
+              >
+                <Download className="size-3.5" />
+              </button>
+            )}
+          </div>
+        )
+      }
+      return <div {...props}>{children}</div>
+    },
     // Images: render uploaded images with constrained sizing
-    img: ({ src, alt }) => (
-      <img
-        src={src}
-        alt={alt ?? ""}
-        className="max-w-full h-auto rounded-md my-2"
-        loading="lazy"
-      />
-    ),
+    img: ({ src, alt }) => {
+      if (renderImage) {
+        return <>{renderImage({ src: typeof src === 'string' ? src : '', alt: alt ?? '' })}</>
+      }
+      return (
+        <img
+          src={src}
+          alt={alt ?? ""}
+          className="max-w-full h-auto rounded-md my-2"
+          loading="lazy"
+        />
+      )
+    },
     // Links: Make clickable with callbacks, or render as mention
     a: ({ href, children }) => {
-      // Mention links: mention://member/id, mention://agent/id, mention://issue/id, mention://all/all
+      // Mention links: mention://member/id, mention://agent/id, mention://issue/id, mention://project/id, mention://all/all
       if (href?.startsWith('mention://')) {
-        const mentionMatch = href.match(/^mention:\/\/(member|agent|issue|all)\/(.+)$/)
+        const mentionMatch = href.match(/^mention:\/\/(member|agent|issue|project|all)\/(.+)$/)
         if (mentionMatch?.[1] && mentionMatch[2]) {
           const type = mentionMatch[1]
           const id = mentionMatch[2]
 
           if (renderMention) {
-            return <>{renderMention({ type, id })}</>
+            // Let the custom renderer opt out for types it doesn't handle
+            // by returning null/undefined — we then fall through to the
+            // default styled span so nothing ever disappears silently.
+            const rendered = renderMention({ type, id })
+            if (rendered) return <>{rendered}</>
           }
 
           // Fallback: render as a simple styled span
@@ -127,6 +203,14 @@ function createComponents(
         }
         return (
           <span className="text-primary font-semibold mx-0.5">
+            {children}
+          </span>
+        )
+      }
+
+      if (href?.startsWith('slash://skill/')) {
+        return (
+          <span className="slash-command text-primary font-semibold mx-0.5">
             {children}
           </span>
         )
@@ -164,8 +248,12 @@ function createComponents(
     return {
       ...baseComponents,
       // No special code handling - just monospace
-      code: ({ children }) => <code className="font-mono">{children}</code>,
-      pre: ({ children }) => <pre className="font-mono whitespace-pre-wrap my-2">{children}</pre>,
+      code: ({ children }) => <code className={cn('font-mono', CODE_LIGATURE_CLASS)}>{children}</code>,
+      pre: ({ children }) => (
+        <pre className={cn('font-mono whitespace-pre-wrap my-2', CODE_LIGATURE_CLASS)}>
+          {children}
+        </pre>
+      ),
       // Minimal paragraph spacing
       p: ({ children }) => <p className="my-1">{children}</p>,
       // Simple lists
@@ -333,24 +421,36 @@ export function Markdown({
   className,
   onUrlClick,
   onFileClick,
-  renderMention
+  renderMention,
+  renderImage,
+  renderFileCard,
+  cdnDomain
 }: MarkdownProps): React.JSX.Element {
   const components = React.useMemo(
-    () => createComponents(mode, onUrlClick, onFileClick, renderMention),
-    [mode, onUrlClick, onFileClick, renderMention]
+    () => createComponents(mode, onUrlClick, onFileClick, renderMention, renderImage, renderFileCard),
+    [mode, onUrlClick, onFileClick, renderMention, renderImage, renderFileCard]
   )
 
-  // Preprocess: convert mention shortcodes and raw URLs/file paths to markdown links
+  // Preprocess: convert mention shortcodes, raw URLs, and file cards to renderable content
   const processedContent = React.useMemo(
-    () => preprocessLinks(preprocessMentionShortcodes(children)),
-    [children]
+    () => {
+      let result = preprocessMentionShortcodes(children)
+      result = preprocessLinks(result)
+      result = preprocessFileCards(result, cdnDomain ?? '')
+      return result
+    },
+    [children, cdnDomain]
   )
 
   return (
     <div className={cn('markdown-content break-words', className)}>
       <ReactMarkdown
-        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        remarkPlugins={[
+          [remarkMath, { singleDollarTextMath: false }],
+          remarkBreaks,
+          [remarkGfm, { singleTilde: false }],
+        ]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeKatex]}
         urlTransform={urlTransform}
         components={components}
       >

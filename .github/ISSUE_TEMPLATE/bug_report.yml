@@ -3,6 +3,17 @@ description: Report a bug — something that's broken, crashes, or behaves incor
 title: "[Bug]: "
 labels: ["bug"]
 body:
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment type
+      description: Are you using the Official App (multica.ai) or a self-hosted instance?
+      options:
+        - Official App
+        - self-host
+    validations:
+      required: true
+
   - type: textarea
     id: description
     attributes:

@@ -4,10 +4,12 @@ export type InboxSeverity = "action_required" | "attention" | "info";
 
 export type InboxItemType =
   | "issue_assigned"
+  | "issue_subscribed"
   | "unassigned"
   | "assignee_changed"
   | "status_changed"
   | "priority_changed"
+  | "start_date_changed"
   | "due_date_changed"
   | "new_comment"
   | "mentioned"
@@ -16,14 +18,16 @@ export type InboxItemType =
   | "task_failed"
   | "agent_blocked"
   | "agent_completed"
-  | "reaction_added";
+  | "reaction_added"
+  | "quick_create_done"
+  | "quick_create_failed";
 
 export interface InboxItem {
   id: string;
   workspace_id: string;
   recipient_type: "member" | "agent";
   recipient_id: string;
-  actor_type: "member" | "agent" | null;
+  actor_type: "member" | "agent" | "system" | null;
   actor_id: string | null;
   type: InboxItemType;
   severity: InboxSeverity;

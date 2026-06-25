@@ -35,11 +35,15 @@ Closes #
 
 ## Checklist
 
-- [ ] I searched for [existing PRs](https://github.com/multica-ai/multica/pulls) to make sure this isn't a duplicate
-- [ ] My commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`fix(scope):`, `feat(scope):`, etc.)
-- [ ] `make check` passes (typecheck, unit tests, Go tests, E2E)
-- [ ] Changes follow existing code patterns and conventions
-- [ ] No unrelated changes included
+- [ ] I have included a thinking path that traces from project context to this change
+- [ ] I have run tests locally and they pass
+- [ ] I have added or updated tests where applicable
+- [ ] If this change affects the UI, I have included before/after screenshots
+- [ ] I have updated relevant documentation to reflect my changes
+- [ ] If I added a new runtime / coding tool / UI tab, I synced the change to **landing copy** (`apps/web/features/landing/i18n/`) and **relevant docs** (`apps/docs/content/docs/`)
+- [ ] If this PR touches Chinese product copy, I checked it against `apps/docs/content/docs/developers/conventions.zh.mdx` (terminology, mixed-rule for `task` / `issue` / `skill`)
+- [ ] I have considered and documented any risks above
+- [ ] I will address all reviewer comments before requesting merge
 
 ## AI Disclosure
 

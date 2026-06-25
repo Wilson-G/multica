@@ -1,14 +1,17 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@multica/ui/components/ui/sidebar";
+import { SidebarProvider, SidebarInset } from "@multica/ui/components/ui/sidebar";
 import { ModalRegistry } from "../modals/registry";
+import { SourceBackfillModal } from "../onboarding";
 import { AppSidebar } from "./app-sidebar";
 import { DashboardGuard } from "./dashboard-guard";
+import { NavigationProgress } from "./navigation-progress";
+import { WorkspacePresencePrefetch } from "./workspace-presence-prefetch";
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  /** Sibling of SidebarInset (e.g. SearchCommand, ChatWindow) */
+  /** Rendered inside SidebarInset (e.g. ChatWindow, ChatFab — absolute-positioned overlays) */
   extra?: ReactNode;
   /** Rendered inside sidebar header as a search trigger */
   searchSlot?: ReactNode;
@@ -24,7 +27,6 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   return (
     <DashboardGuard
-      loginPath="/"
       loadingFallback={
         <div className="flex h-svh items-center justify-center">
           {loadingIndicator}
@@ -32,15 +34,15 @@ export function DashboardLayout({
       }
     >
       <SidebarProvider className="h-svh">
+        <WorkspacePresencePrefetch />
         <AppSidebar searchSlot={searchSlot} />
-        <SidebarInset className="overflow-hidden">
-          <div className="flex h-10 shrink-0 items-center border-b px-2 md:hidden">
-            <SidebarTrigger />
-          </div>
+        <SidebarInset className="relative overflow-hidden">
+          <NavigationProgress />
           {children}
           <ModalRegistry />
+          <SourceBackfillModal />
+          {extra}
         </SidebarInset>
-        {extra}
       </SidebarProvider>
     </DashboardGuard>
   );
